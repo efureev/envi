@@ -1,5 +1,8 @@
 # Envi is a package to manage `.env` files
 
+[![Go package](https://github.com/efureev/envi/actions/workflows/go.yml/badge.svg)](https://github.com/efureev/envi/actions/workflows/go.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/efureev/envi)](https://goreportcard.com/report/github.com/efureev/envi)
+
 ## Installation
 
 As a library
