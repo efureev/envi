@@ -23,7 +23,7 @@ go get github.com/efureev/envi
 
 ## Usage
 
-For example, `.env` file:
+For example, `.env` file to parse:
 
 ```dotenv
 ###   ---[ Application section ]---   ###
