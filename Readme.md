@@ -77,7 +77,7 @@ By default, it's `1`.
 Block may have a comment.
 
 ```go
-block := envi.NewBlock(prefix string).SetComment(`Application section`)
+block := envi.NewBlock(`app`).SetComment(`Application section`)
 ```
 
 You may change indent after `Block`:
@@ -108,10 +108,24 @@ A `Row` may have a comment.
 row := envi.NewRow(`app-section`, 'section 345').SetComment(`Section for the unit '345'`)
 ```
 
+Will be:
+
+```dotenv
+# Section for the unit '345'
+APP_SECTION="section 345"
+```
+
 A `Row` may be commented.
 
 ```go
 row.Commented()
+```
+
+Will be:
+
+```dotenv
+# Section for the unit '345'
+# APP_SECTION="section 345"
 ```
 
 A `Row` may be a part of `Block` or not.
@@ -122,6 +136,13 @@ block := envi.NewBlock(`app`).AddRow(`session`, `test`)
 env.Add(block, NewRow(`app-hash`, `sha-256`))
 
 env.Save(`.env.local`)
+```
+
+Will be:
+
+```dotenv
+Section for the unit '345'
+APP_SESSION="sha-256"
 ```
 
 ### How to load `.env` files
