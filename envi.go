@@ -11,6 +11,7 @@ import (
 type EnvBlock interface {
 	GetKey() string
 	Marshal() (string, error)
+	MarshalSlice() (lines []string, err error)
 }
 
 var groupRowsGreaterThen = 0
@@ -65,7 +66,11 @@ func ParseRows(r io.Reader) (rows map[string]*row, err error) {
 			} else {
 				commentedRow, cErr := isCommentedRow(trimmedLine)
 				if cErr == nil {
-					rows[commentedRow.Key] = commentedRow
+					if origRow, ok := rows[commentedRow.Key]; ok {
+						origRow.AddShadow(commentedRow.Value)
+					} else {
+						rows[commentedRow.Key] = commentedRow
+					}
 				} else {
 					if cErr == ErrWrongLineFormat {
 						preLines += trimmedLine + "\n"
@@ -82,9 +87,6 @@ func ParseRows(r io.Reader) (rows map[string]*row, err error) {
 		}
 
 		key, value, comment, rErr := parseLine(preLines + trimmedLine)
-		if _, ok := rows[key]; ok {
-			continue
-		}
 
 		preLines = ``
 		if rErr != nil {
@@ -95,7 +97,18 @@ func ParseRows(r io.Reader) (rows map[string]*row, err error) {
 		row := NewRow(key, value).SetComment(comment)
 		row.blockComment = blockComment
 		blockComment = ``
-		rows[key] = row
+
+		if origRow, ok := rows[key]; ok {
+			if origRow.commented {
+				row.AddShadows(origRow.shadows)
+				rows[key] = row
+			} else {
+				//origRow.Merge(*row)
+				origRow.AddShadow(row.Value)
+			}
+		} else {
+			rows[key] = row
+		}
 	}
 
 	return
@@ -167,19 +180,29 @@ func (e Env) Sorting() {
 	})
 }
 
-func (e Env) Marshal() (res string, err error) {
-
-	var totalLines []string
+func (e Env) Marshal() (string, error) {
+	var res string
 	for _, item := range e {
-		lines, iErr := item.Marshal()
-
+		str, err := item.Marshal()
 		if err != nil {
-			return res, iErr
+			return res, err
 		}
-		totalLines = append(totalLines, lines)
+		res += "\n" + str
 	}
 
-	return strings.TrimSpace(strings.Join(totalLines, "\n")), nil
+	return strings.TrimSpace(res), nil
+}
+
+func (e Env) MarshalToSlice() (res []string, err error) {
+	for _, item := range e {
+		lines, err := item.MarshalSlice()
+		if err != nil {
+			return res, err
+		}
+		res = append(res, lines...)
+	}
+
+	return
 }
 
 func (e Env) Counts() (blocks, rows int) {
@@ -453,6 +476,13 @@ func (e Env) Save(filename string) (err error) {
 	return
 }
 
+func (e Env) String() (str string) {
+
+	str, _ = e.Marshal()
+
+	return
+}
+
 func loadFromFile(filename string) (rows map[string]*row, err error) {
 	var f *os.File
 	f, err = os.Open(filename)
@@ -479,7 +509,6 @@ func Load(filenames ...string) (Env, error) {
 			return nil, err
 		} else {
 			mergeRowMap(rows, rowsToMerge)
-
 		}
 	}
 

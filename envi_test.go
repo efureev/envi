@@ -64,6 +64,8 @@ func TestUnmarshal(t *testing.T) {
 	}
 	exp := []string{
 		"APP_SECURE=true",
+		`# APP_SESSION="localhost"`,
+		`# APP_SESSION="127.0.0.1"`,
 		`APP_SESSION=".example.com"`,
 		`# Application URL`,
 		`APP_URL="https://example.com"`,
@@ -92,6 +94,8 @@ func TestUnmarshal(t *testing.T) {
 	exp = []string{
 		`# <-- Block for an Application Settings -->`,
 		"APP_SECURE=true",
+		`# APP_SESSION="localhost"`,
+		`# APP_SESSION="127.0.0.1"`,
 		`APP_SESSION=".example.com"`,
 		`# Application URL`,
 		`APP_URL="https://example.com"`,
@@ -328,5 +332,57 @@ func TestParse(t *testing.T) {
 	appName := appBlock.GetRow(`name`)
 	if appName.Comment != `Application name` {
 		t.Fatal(`should be 'Application name'`)
+	}
+}
+
+func TestParseMultiCommentFile(t *testing.T) {
+	SetCommentTemplate(`###  < `, `>  ###`)
+
+	env, err := Load(`stubs/.env.multi-comment.example`)
+	if err != nil {
+		t.Fatalf("should be `nil`")
+	}
+	resSlice, err := env.MarshalToSlice()
+	if err != nil {
+		t.Fatalf("should be `nil`")
+	}
+
+	if len(resSlice) != 11 {
+		t.Fatalf("should be `11`, %d instead", len(resSlice))
+	}
+	if !strings.Contains(resSlice[2], `#`) ||
+		strings.Contains(resSlice[2], "\n") ||
+		!strings.Contains(resSlice[3], `#`) ||
+		strings.Contains(resSlice[3], "\n") ||
+		!strings.Contains(resSlice[4], `#`) ||
+		strings.Contains(resSlice[4], "\n") {
+		t.Fatalf("wrong")
+	}
+
+	/*expLine := "###  < REDIS>  ###\nREDIS_CLIENT=\"predis\"\n# Redis standalong\nnot for docker: 127.0.0.1\nREDIS_HOST=\"127.0.0.1\"\n# REDIS_MODE=\"sentinel\"\n# REDIS_PASSWORD=\"null\"\n# Standalong port\nREDIS_PORT=6379\nREDIS_PREFIX=\"local\""
+	exp := strings.Split(expLine, "\n")
+	spew.Dump(exp)
+	res, err := env.Marshal()
+	spew.Dump(res, err)*/
+}
+
+func TestParseShadowsFile(t *testing.T) {
+	SetCommentTemplate(`###  < `, `>  ###`)
+
+	env, err := Load(`stubs/.env.shadows.example`)
+	if err != nil {
+		t.Fatalf("should be `nil`")
+	}
+
+	str := env.String()
+
+	env2, err := Unmarshal(str)
+	if err != nil {
+		t.Fatalf("should be `nil`")
+	}
+	str2 := env2.String()
+
+	if str != str2 {
+		t.Fatalf("should be `equal`")
 	}
 }

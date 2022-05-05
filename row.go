@@ -14,6 +14,7 @@ type row struct {
 	Comment      string
 	blockComment string
 	block        *Block
+	shadows      []string
 }
 
 func (r row) Marshal() (string, error) {
@@ -24,10 +25,42 @@ func (r row) Marshal() (string, error) {
 	}
 
 	if r.Comment != `` {
-		line = `# ` + r.Comment + "\n" + line
+		comment := strings.ReplaceAll(r.Comment, "\n", "\n# ")
+		line = `# ` + comment + "\n" + line
 	}
 
 	return line, nil
+}
+
+func formatRowLine(key, value string, commented bool) string {
+	line := fmt.Sprintf(`%s=%s`, key, value)
+	if commented {
+		line = `# ` + line
+	}
+	return line
+}
+
+func (r row) MarshalSlice() (lines []string, err error) {
+	line := formatRowLine(r.GetFullKey(), normalizeValue(r.Value), r.commented)
+
+	if r.Comment != `` {
+		comments := strings.Split(r.Comment, "\n")
+		for k, c := range comments {
+			comments[k] = `# ` + c
+		}
+
+		lines = append(lines, comments...)
+	}
+
+	if !r.commented {
+		for _, s := range r.shadows {
+			lines = append(lines, formatRowLine(r.GetFullKey(), normalizeValue(s), true))
+		}
+	}
+
+	lines = append(lines, line)
+
+	return lines, nil
 }
 
 func (r row) GetKey() string {
@@ -68,10 +101,36 @@ func (r *row) Commented() *row {
 
 func (r *row) Merge(rowToMerge row) {
 	r.Value = rowToMerge.Value
+	r.AddShadows(rowToMerge.shadows)
 
 	if r.Comment == `` && rowToMerge.Comment != `` {
 		r.Comment = rowToMerge.Comment
 	}
+}
+
+func (r *row) HasShadows(shadow string) bool {
+	for _, s := range r.shadows {
+		if s == shadow {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *row) AddShadow(shadow string) *row {
+	if !r.HasShadows(shadow) {
+		r.shadows = append(r.shadows, shadow)
+	}
+
+	return r
+}
+
+func (r *row) AddShadows(shadows []string) *row {
+	for _, v := range shadows {
+		r.AddShadow(v)
+	}
+
+	return r
 }
 
 func NewRow(key, value string) *row {

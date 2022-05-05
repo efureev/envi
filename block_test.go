@@ -120,7 +120,7 @@ func TestBlock_MarshalSlice2(t *testing.T) {
 		t.Fatalf("should be `nil`")
 	}
 
-	if len(lines) != 3 {
+	if len(lines) != 4 {
 		t.Fatalf("should be `%d`", len(lines))
 	}
 
@@ -132,8 +132,11 @@ func TestBlock_MarshalSlice2(t *testing.T) {
 		t.Fatalf("should be `APP_SESSION=\".example.com\"`")
 	}
 
-	if lines[2] != "# Application URL\nAPP_URL=\"https://example.com\"" {
-		t.Fatalf("should be `# Application URL\nAPP_URL=\"https://example.com\"")
+	if lines[2] != "# Application URL" {
+		t.Fatalf("should be `# Application URL")
+	}
+	if lines[3] != "APP_URL=\"https://example.com\"" {
+		t.Fatalf("should be `APP_URL=\"https://example.com\"")
 	}
 
 	SetCommentTemplate(`# <- `, ` ->`)

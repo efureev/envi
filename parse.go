@@ -121,7 +121,7 @@ func isCommentedRow(line string) (*row, error) {
 		return nil, err
 	}
 
-	return NewRow(key, value).SetComment(comment).Commented(), nil
+	return NewRow(key, value).SetComment(comment).Commented().AddShadow(value), nil
 }
 func checkFormat(line string) error {
 	st := strings.TrimSpace(line)

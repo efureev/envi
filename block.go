@@ -41,13 +41,13 @@ func (b Block) MarshalSlice() (lines []string, err error) {
 	}
 
 	for _, row := range b.Rows {
-		var line string
-		line, err = row.Marshal()
-		if err != nil {
+		rLines, rErr := row.MarshalSlice()
+		if rErr != nil {
+			err = rErr
 			return
 		}
 
-		lines = append(lines, line)
+		lines = append(lines, rLines...)
 	}
 
 	return
