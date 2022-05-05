@@ -189,7 +189,9 @@ func (e Env) Marshal() (string, error) {
 		if err != nil {
 			return res, err
 		}
-		res += "\n" + str
+		if str != `` {
+			res += "\n" + str
+		}
 	}
 
 	return strings.TrimSpace(res), nil
@@ -197,7 +199,9 @@ func (e Env) Marshal() (string, error) {
 
 func (e Env) MarshalToSlice() (res []string) {
 	for _, item := range e {
-		res = append(res, item.MarshalSlice()...)
+		if lines := item.MarshalSlice(); lines != nil {
+			res = append(res, item.MarshalSlice()...)
+		}
 	}
 
 	return
@@ -449,11 +453,7 @@ func (e Env) SetEnv(override bool) {
 
 func (e Env) Save(filename string) (err error) {
 	var f *os.File
-	if !isExistPath(filename) {
-		f, err = os.Create(filename)
-	} else {
-		f, err = os.Open(filename)
-	}
+	f, err = os.Create(filename)
 
 	if err != nil {
 		return

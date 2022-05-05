@@ -6,6 +6,8 @@
 *.dylib
 
 stubs/.env.total
+stubs/.env.example.final
+stubs/.env.tmp
 
 # Test binary, build with `go test -c`
 *.test

@@ -23,8 +23,11 @@ func (b Block) GetKey() string {
 
 func (b Block) Marshal() (str string, err error) {
 	lines := b.MarshalSlice()
-	str = strings.Join(lines, "\n")
+	if lines == nil {
+		return
+	}
 
+	str = strings.Join(lines, "\n")
 	str += strings.Repeat("\n", blockIndent)
 
 	return
@@ -39,11 +42,12 @@ func (b Block) MarshalSlice() (lines []string) {
 		comment := commentTemplateBefore + b.Comment + commentTemplateAfter
 		lines = append(lines, comment)
 	}
-
 	for _, row := range b.Rows {
 		rLines := row.MarshalSlice()
 
-		lines = append(lines, rLines...)
+		if rLines != nil {
+			lines = append(lines, rLines...)
+		}
 	}
 
 	return

@@ -1,7 +1,6 @@
 package envi
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -304,11 +303,7 @@ func TestLoad(t *testing.T) {
 		t.Fatalf("should be `true`")
 	}
 
-	envFileTotal := `stubs/.env.total`
-
-	os.RemoveAll(envFileTotal)
-
-	err = env.Save(envFileTotal)
+	err = env.Save(`stubs/.env.total`)
 	if err != nil {
 		t.Fatalf("should be `nil`")
 	}
@@ -429,4 +424,17 @@ func TestParseFullExampleFile(t *testing.T) {
 	if len(sl) != 32 {
 		t.Fatal(`wrong`)
 	}
+
+	env.Save(`stubs/.env.example.final`)
+}
+
+func TestParseTmpExampleFile(t *testing.T) {
+	SetCommentTemplate(`###  < `, `>  ###`)
+
+	env, err := Load(`stubs/.env.tmp`)
+	if err != nil {
+		t.Fatalf("should be `nil`")
+	}
+
+	env.Save(`stubs/.env.example.final`)
 }
