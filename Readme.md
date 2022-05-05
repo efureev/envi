@@ -174,7 +174,7 @@ envi.SetMarshalingWithoutShadows()
 REDIS_HOST=127.0.0.1
 ```
 
-`REDIS_HOST=redis` & `REDIS_HOST=10.212.12.2` - are shadows.
+`REDIS_HOST=redis` & `REDIS_HOST=10.212.12.2` - are shadows for row `REDIS_HOST=127.0.0.1`.
 
 ### How to manipulate data after parsing `.env` files
 
