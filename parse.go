@@ -17,6 +17,13 @@ var ErrEmptyString = errors.New("zero length string")
 var ErrOnlyComment = errors.New("only comment")
 var ErrWrongLineFormat = errors.New("line doesn't match format")
 
+func lineToComment(line string) string {
+	line = removeAdjacentDuplicatesOnly(line, `#`)
+	line = strings.ReplaceAll(line, `#`, ``)
+	line = strings.TrimSpace(line)
+
+	return line
+}
 func parseLine(line string) (key, value, comment string, err error) {
 	line = strings.TrimSpace(line)
 	if len(line) == 0 {
@@ -27,21 +34,7 @@ func parseLine(line string) (key, value, comment string, err error) {
 	if strings.HasPrefix(line, "#") {
 
 		strs := strings.Split(line, "\n")
-
-		commentPre := removeAdjacentDuplicatesOnly(strs[0], `#`)
-		commentPre = strings.ReplaceAll(commentPre, `#`, ``)
-		commentPre = strings.TrimSpace(commentPre)
-
-		/*if _, ok := rowCommentMatchBlock(strs[0]); ok {
-			//spew.Dump(strs[0], cmt, ok)
-			//os.Exit(32)
-			commentPre = strs[0]
-			//println(commentPre)
-		} else {
-			commentPre = removeAdjacentDuplicatesOnly(strs[0], `#`)
-			commentPre = strings.ReplaceAll(commentPre, `#`, ``)
-			commentPre = strings.TrimSpace(commentPre)
-		}*/
+		commentPre := lineToComment(strs[0])
 
 		if len(strs) == 1 {
 			return ``, ``, commentPre, ErrOnlyComment

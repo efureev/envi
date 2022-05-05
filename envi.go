@@ -11,7 +11,7 @@ import (
 type EnvBlock interface {
 	GetKey() string
 	Marshal() (string, error)
-	MarshalSlice() (lines []string, err error)
+	MarshalSlice() (lines []string)
 }
 
 var groupRowsGreaterThen = 0
@@ -66,6 +66,8 @@ func ParseRows(r io.Reader) (rows map[string]*row, err error) {
 			} else {
 				commentedRow, cErr := isCommentedRow(trimmedLine)
 				if cErr == nil {
+					commentedRow.SetComment(lineToComment(preLines))
+					preLines = ``
 					if origRow, ok := rows[commentedRow.Key]; ok {
 						origRow.AddShadow(commentedRow.Value)
 					} else {
@@ -193,13 +195,9 @@ func (e Env) Marshal() (string, error) {
 	return strings.TrimSpace(res), nil
 }
 
-func (e Env) MarshalToSlice() (res []string, err error) {
+func (e Env) MarshalToSlice() (res []string) {
 	for _, item := range e {
-		lines, err := item.MarshalSlice()
-		if err != nil {
-			return res, err
-		}
-		res = append(res, lines...)
+		res = append(res, item.MarshalSlice()...)
 	}
 
 	return
@@ -476,13 +474,13 @@ func (e Env) Save(filename string) (err error) {
 	return
 }
 
-func (e Env) String() (str string) {
+/*func (e Env) String() (str string) {
 
 	str, _ = e.Marshal()
 
 	return
 }
-
+*/
 func loadFromFile(filename string) (rows map[string]*row, err error) {
 	var f *os.File
 	f, err = os.Open(filename)

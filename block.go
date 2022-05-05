@@ -22,7 +22,7 @@ func (b Block) GetKey() string {
 }
 
 func (b Block) Marshal() (str string, err error) {
-	lines, err := b.MarshalSlice()
+	lines := b.MarshalSlice()
 	str = strings.Join(lines, "\n")
 
 	str += strings.Repeat("\n", blockIndent)
@@ -30,7 +30,7 @@ func (b Block) Marshal() (str string, err error) {
 	return
 }
 
-func (b Block) MarshalSlice() (lines []string, err error) {
+func (b Block) MarshalSlice() (lines []string) {
 	if len(b.Rows) == 0 {
 		return
 	}
@@ -41,11 +41,7 @@ func (b Block) MarshalSlice() (lines []string, err error) {
 	}
 
 	for _, row := range b.Rows {
-		rLines, rErr := row.MarshalSlice()
-		if rErr != nil {
-			err = rErr
-			return
-		}
+		rLines := row.MarshalSlice()
 
 		lines = append(lines, rLines...)
 	}

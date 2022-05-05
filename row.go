@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+var marshalWithShadows = true
+var marshalWithCommentedRows = true
+var marshalWithComments = true
+
 type row struct {
 	commented    bool
 	Key          string
@@ -18,18 +22,7 @@ type row struct {
 }
 
 func (r row) Marshal() (string, error) {
-	line := fmt.Sprintf(`%s=%s`, r.GetFullKey(), normalizeValue(r.Value))
-
-	if r.commented {
-		line = `# ` + line
-	}
-
-	if r.Comment != `` {
-		comment := strings.ReplaceAll(r.Comment, "\n", "\n# ")
-		line = `# ` + comment + "\n" + line
-	}
-
-	return line, nil
+	return strings.Join(r.MarshalSlice(), "\n"), nil
 }
 
 func formatRowLine(key, value string, commented bool) string {
@@ -40,10 +33,13 @@ func formatRowLine(key, value string, commented bool) string {
 	return line
 }
 
-func (r row) MarshalSlice() (lines []string, err error) {
+func (r row) MarshalSlice() (lines []string) {
+	if r.commented && !marshalWithCommentedRows {
+		return
+	}
 	line := formatRowLine(r.GetFullKey(), normalizeValue(r.Value), r.commented)
 
-	if r.Comment != `` {
+	if r.Comment != `` && marshalWithComments {
 		comments := strings.Split(r.Comment, "\n")
 		for k, c := range comments {
 			comments[k] = `# ` + c
@@ -52,7 +48,7 @@ func (r row) MarshalSlice() (lines []string, err error) {
 		lines = append(lines, comments...)
 	}
 
-	if !r.commented {
+	if !r.commented && marshalWithShadows {
 		for _, s := range r.shadows {
 			lines = append(lines, formatRowLine(r.GetFullKey(), normalizeValue(s), true))
 		}
@@ -60,7 +56,7 @@ func (r row) MarshalSlice() (lines []string, err error) {
 
 	lines = append(lines, line)
 
-	return lines, nil
+	return lines
 }
 
 func (r row) GetKey() string {
@@ -201,4 +197,26 @@ func mergeRowMap(origin, adding map[string]*row) {
 			origin[aR.Key] = aR
 		}
 	}
+}
+
+func SetMarshalingWithoutShadows() {
+	marshalWithShadows = false
+}
+
+func SetMarshalingWithShadows() {
+	marshalWithShadows = true
+}
+
+func SetMarshalingWithoutCommentedRows() {
+	marshalWithCommentedRows = false
+}
+
+func SetMarshalingWithCommentedRows() {
+	marshalWithCommentedRows = true
+}
+func SetMarshalingWithComments() {
+	marshalWithComments = true
+}
+func SetMarshalingWithoutComments() {
+	marshalWithComments = false
 }

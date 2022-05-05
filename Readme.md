@@ -137,6 +137,45 @@ env, err := envi.Load(`stubs/.env`, `stubs/.env.development`, `stubs/.env.develo
 env.Save(`.env.finish`)
 ```
 
+### How to marshal `Env`
+
+Convert data to slice of `row`s
+
+```go
+lines := env.MarshalToSlice()
+```
+
+Convert data to string
+
+```go
+text, err := env.Marshal()
+```
+
+Marshaling settings:
+
+```go
+// Marshal a data without commented rows
+envi.SetMarshalingWithoutCommentedRows()
+
+// Marshal a data without comments
+envi.SetMarshalingWithoutComments()
+
+// Marshal a data without `shadows`*
+envi.SetMarshalingWithoutShadows()
+```
+
+*`shadow` - it's a commented example row. For instance:
+
+```dotenv
+# for docker
+# REDIS_HOST=redis
+# not for docker: 127.0.0.1
+#REDIS_HOST=10.212.12.2
+REDIS_HOST=127.0.0.1
+```
+
+`REDIS_HOST=redis` & `REDIS_HOST=10.212.12.2` - are shadows.
+
 ### How to manipulate data after parsing `.env` files
 
 ```go

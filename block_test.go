@@ -92,10 +92,7 @@ func TestBlock_MarshalSlice(t *testing.T) {
 		NewRow(`session`, `.example.com`),
 	)
 
-	lines, err := block.MarshalSlice()
-	if err != nil {
-		t.Fatalf("should be `nil`")
-	}
+	lines := block.MarshalSlice()
 
 	if len(lines) != 1 {
 		t.Fatalf("should be `1`")
@@ -115,10 +112,7 @@ func TestBlock_MarshalSlice2(t *testing.T) {
 			NewRow(`URL`, `https://example.com`).SetComment(`Application URL`),
 		)
 
-	lines, err := block.MarshalSlice()
-	if err != nil {
-		t.Fatalf("should be `nil`")
-	}
+	lines := block.MarshalSlice()
 
 	if len(lines) != 4 {
 		t.Fatalf("should be `%d`", len(lines))
@@ -141,7 +135,7 @@ func TestBlock_MarshalSlice2(t *testing.T) {
 
 	SetCommentTemplate(`# <- `, ` ->`)
 
-	lines, _ = block.MarshalSlice()
+	lines = block.MarshalSlice()
 
 	if lines[0] != `# <- Block for an Application Settings ->` {
 		t.Fatal("Wrong!")

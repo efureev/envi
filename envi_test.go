@@ -342,19 +342,17 @@ func TestParseMultiCommentFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("should be `nil`")
 	}
-	resSlice, err := env.MarshalToSlice()
-	if err != nil {
-		t.Fatalf("should be `nil`")
+	resSlice := env.MarshalToSlice()
+
+	if len(resSlice) != 10 {
+		t.Fatalf("should be `10`, %d instead", len(resSlice))
 	}
 
-	if len(resSlice) != 11 {
-		t.Fatalf("should be `11`, %d instead", len(resSlice))
-	}
 	if !strings.Contains(resSlice[2], `#`) ||
 		strings.Contains(resSlice[2], "\n") ||
 		!strings.Contains(resSlice[3], `#`) ||
 		strings.Contains(resSlice[3], "\n") ||
-		!strings.Contains(resSlice[4], `#`) ||
+		strings.Contains(resSlice[4], `#`) ||
 		strings.Contains(resSlice[4], "\n") {
 		t.Fatalf("wrong")
 	}
@@ -366,6 +364,7 @@ func TestParseMultiCommentFile(t *testing.T) {
 	spew.Dump(res, err)*/
 }
 
+/*
 func TestParseShadowsFile(t *testing.T) {
 	SetCommentTemplate(`###  < `, `>  ###`)
 
@@ -384,5 +383,50 @@ func TestParseShadowsFile(t *testing.T) {
 
 	if str != str2 {
 		t.Fatalf("should be `equal`")
+	}
+}
+*/
+func TestParseFullCommentsFile(t *testing.T) {
+	env, err := Load(`stubs/.env.all-commented.example`)
+	if err != nil {
+		t.Fatalf("should be `nil`")
+	}
+	r1 := env.Get(`VENDOR_DATA_PATH`)
+	if r1.Value != `/Volumes/Docker/data/ssp/vendor` || r1.Comment != `Path to vendor` || !r1.commented {
+		t.Fatal(`wrong!`)
+	}
+
+	r2 := env.Get(`DB_DATA_PATH`)
+	if r2.Value != `/Volumes/Docker/data/ssp/storage` || r2.Comment != "Path to db storage\nUse careful" || r2.commented {
+		t.Fatal(`wrong!`)
+	}
+
+	SetMarshalingWithoutComments()
+	sl := env.MarshalToSlice()
+	if len(sl) != 2 || sl[0] != `DB_DATA_PATH="/Volumes/Docker/data/ssp/storage"` || sl[1] != `# VENDOR_DATA_PATH="/Volumes/Docker/data/ssp/vendor"` {
+		t.Fatal(`Wrong`)
+	}
+
+	SetMarshalingWithoutCommentedRows()
+	sl = env.MarshalToSlice()
+	if len(sl) != 1 || sl[0] != `DB_DATA_PATH="/Volumes/Docker/data/ssp/storage"` {
+		t.Fatal(`Wrong`)
+	}
+}
+
+func TestParseFullExampleFile(t *testing.T) {
+	SetCommentTemplate(`###  < `, `>  ###`)
+
+	env, err := Load(`stubs/.env.example`)
+	if err != nil {
+		t.Fatalf("should be `nil`")
+	}
+	SetMarshalingWithoutShadows()
+	SetMarshalingWithoutCommentedRows()
+	SetMarshalingWithoutComments()
+
+	sl := env.MarshalToSlice()
+	if len(sl) != 32 {
+		t.Fatal(`wrong`)
 	}
 }
