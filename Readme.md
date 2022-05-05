@@ -34,7 +34,8 @@ For example, `.env` file to parse:
 APP_NAME="App name"
 APP_DEBUG=false
 
-# Default host
+# Default dev.host
+# APP_URL=http://dev.example.com
 APP_URL=https://example.com
 
 ###   ---[ NGINX cache section ]---   ###
@@ -57,7 +58,7 @@ Here we see:
     - `APP`: Has Comment. Contains rows:
         - `APP_NAME`: Has Comment
         - `APP_DEBUG`
-        - `APP_URL`
+        - `APP_URL`: Has `shadow`: `http://dev.example.com`
         - `APP_TRACE_LOAD`: Commented row
     - `CACHE`: Has Comment. Contains rows:
         - `CACHE_NGINX_PATH`: Has a Comment
