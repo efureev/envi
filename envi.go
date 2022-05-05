@@ -31,10 +31,7 @@ func Parse(r io.Reader) (env Env, err error) {
 		return
 	}
 	env = SortByBlocks(rows)
-
-	sort.SliceStable(env, func(i, j int) bool {
-		return env[i].GetKey() < env[j].GetKey()
-	})
+	env.Sorting()
 
 	return
 }
@@ -162,6 +159,12 @@ func suspectBlock(key string) (blockPrefix, rowName string) {
 	}
 
 	return ``, key
+}
+
+func (e Env) Sorting() {
+	sort.SliceStable(e, func(i, j int) bool {
+		return e[i].GetKey() < e[j].GetKey()
+	})
 }
 
 func (e Env) Marshal() (res string, err error) {
@@ -481,11 +484,19 @@ func Load(filenames ...string) (Env, error) {
 	}
 
 	env := SortByBlocks(rows)
+	env.Sorting()
 
-	sort.SliceStable(env, func(i, j int) bool {
-		return env[i].GetKey() < env[j].GetKey()
-	})
 	return env, nil
+}
+
+func LoadFromMap(list map[string]string) Env {
+	env := Env{}
+	for key, value := range list {
+		row := NewRow(key, value)
+		env.addRow(row)
+	}
+
+	return env
 }
 
 func GroupRowsGreaterThen(val int) {
