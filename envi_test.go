@@ -427,14 +427,3 @@ func TestParseFullExampleFile(t *testing.T) {
 
 	env.Save(`stubs/.env.example.final`)
 }
-
-func TestParseTmpExampleFile(t *testing.T) {
-	SetCommentTemplate(`###  < `, `>  ###`)
-
-	env, err := Load(`stubs/.env.tmp`)
-	if err != nil {
-		t.Fatalf("should be `nil`")
-	}
-
-	env.Save(`stubs/.env.example.final`)
-}
