@@ -3,6 +3,8 @@ package envi
 import (
 	"strings"
 	"testing"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 func TestParseRows(t *testing.T) {
@@ -34,6 +36,7 @@ func TestUnmarshal(t *testing.T) {
 		`APP_SECURE=true`,
 		`Z_INDEX=true`,
 		`SECURE_HTTP=true`,
+		`MENU_CACHE=false`,
 		`APPLICATION="Hello!"`,
 		`APP_SESSION="localhost"`,
 		`APP_SESSION="127.0.0.1"`,
@@ -44,17 +47,15 @@ func TestUnmarshal(t *testing.T) {
 		t.Fatal("should be `nil`")
 	}
 
-	if len(env) != 4 {
-		t.Fatal("should be `4`")
+	spew.Dump(env)
+
+	if env.Count() != 8 {
+		t.Fatalf("should be `%d`", env.Count())
 	}
 
 	bCount, rCount := env.Counts()
-	if bCount != 3 || env.BlocksCount() != 3 || rCount != 1 || env.RowsCount() != 1 {
-		t.Fatal("should be `2` and `2`")
-	}
-
-	if env.Count() != 7 {
-		t.Fatal("should be `7`")
+	if bCount != 4 || env.BlocksCount() != 4 || rCount != 1 || env.RowsCount() != 1 {
+		t.Fatalf("should be `%d` and `%d`", bCount, rCount)
 	}
 
 	res, err := env.Marshal()
@@ -70,6 +71,8 @@ func TestUnmarshal(t *testing.T) {
 		`APP_URL="https://example.com"`,
 		``,
 		`APPLICATION="Hello!"`,
+		`MENU_CACHE=false`,
+		``,
 		`SECURE_HTTP=true`,
 		``,
 		`Z_ALPHA="zed"`,
@@ -100,6 +103,8 @@ func TestUnmarshal(t *testing.T) {
 		`APP_URL="https://example.com"`,
 		``,
 		`APPLICATION="Hello!"`,
+		`MENU_CACHE=false`,
+		``,
 		`SECURE_HTTP=true`,
 		``,
 		`Z_ALPHA="zed"`,
@@ -288,12 +293,16 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("should be `nil`")
 	}
-	if env.Count() != 11 {
+	if env.Count() != 12 {
 		t.Fatalf("should be `%d`", env.Count())
 	}
 
 	if env.Get(`APP_URL`).Value != `http://example.dev` {
 		t.Fatalf("should be `http://example.dev`")
+	}
+
+	if env.Get(`MENU_CACHE`).Value != `false` {
+		t.Fatalf("should be `false")
 	}
 
 	if env.Get(`APP_ENV`).Value != `local` {
