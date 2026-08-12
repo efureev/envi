@@ -16,3 +16,6 @@ CLAUDE.md
 .idea/
 .vscode/
 .DS_Store
+
+# Internal working notes, not part of the package
+docs/

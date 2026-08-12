@@ -2,6 +2,7 @@ package envi_test
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -337,4 +338,159 @@ func TestExport(t *testing.T) {
 			t.Errorf("%s = %q, want from-file", key, got)
 		}
 	})
+}
+
+func TestAddIgnoresNilItems(t *testing.T) {
+	t.Parallel()
+
+	var (
+		nilRow   *envi.Row
+		nilBlock *envi.Block
+	)
+
+	e := envi.New()
+	if err := e.Add(nil, nilRow, nilBlock, envi.NewRow("K", "v")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if e.Len() != 1 {
+		t.Errorf("Len = %d, want 1: nil items must be skipped", e.Len())
+	}
+}
+
+func TestAddMergesDuplicateRow(t *testing.T) {
+	t.Parallel()
+
+	e := envi.New(envi.NewRow("K", "one").SetComment("kept"))
+	if err := e.Add(envi.NewRow("K", "two").SetInlineComment("why")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	r := e.Get("K")
+	switch {
+	case e.Len() != 1:
+		t.Errorf("Len = %d, want 1", e.Len())
+	case r.Value() != "two":
+		t.Errorf("value = %q, want the later definition", r.Value())
+	case r.Comment() != "kept":
+		t.Errorf("comment = %q, want the original kept", r.Comment())
+	case r.InlineComment() != "why":
+		t.Errorf("inline comment = %q, want it taken from the addition", r.InlineComment())
+	}
+}
+
+// Merge carries across everything a row knows, not only its value.
+func TestMergeCarriesCommentsAndShadows(t *testing.T) {
+	t.Parallel()
+
+	dst := envi.New(envi.NewRow("K", "one"))
+	src := envi.New(
+		envi.NewRow("K", "two").
+			SetComment("from source").
+			SetInlineComment("trailing").
+			AddShadow("alt"),
+	)
+
+	if err := dst.Merge(src); err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+
+	r := dst.Get("K")
+	switch {
+	case r.Value() != "two":
+		t.Errorf("value = %q", r.Value())
+	case r.Comment() != "from source":
+		t.Errorf("comment = %q", r.Comment())
+	case r.InlineComment() != "trailing":
+		t.Errorf("inline = %q", r.InlineComment())
+	case !r.HasShadow("alt"):
+		t.Error("shadow lost")
+	}
+}
+
+// A row put straight into a block that already belongs to a document is still
+// found, and still removable, through the document.
+func TestRowAddedToAttachedBlockStaysReachable(t *testing.T) {
+	t.Parallel()
+
+	b := envi.NewBlock("APP")
+	if err := b.Add(envi.NewRow("APP_A", "1")); err != nil {
+		t.Fatal(err)
+	}
+	e := envi.New(b)
+
+	// Bypasses the document's index entirely.
+	if err := b.Add(envi.NewRow("APP_B", "2")); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, ok := e.Lookup("APP_B"); !ok || got != "2" {
+		t.Errorf("Lookup(APP_B) = %q, %v", got, ok)
+	}
+	if !e.Delete("APP_B") {
+		t.Error("Delete could not reach the row")
+	}
+	if e.Has("APP_B") {
+		t.Error("row survived deletion")
+	}
+	if e.Delete("APP_ZZZ") {
+		t.Error("Delete reported removing an absent key from an existing block")
+	}
+}
+
+// Adding a block whose prefix is already present merges into the existing one
+// and leaves the document's index consistent.
+func TestAddBlockMergesByPrefix(t *testing.T) {
+	t.Parallel()
+
+	e := envi.New(block(t, "APP", "", envi.NewRow("APP_A", "1")))
+
+	second := envi.NewBlock("APP").SetComment("late")
+	if err := second.Add(envi.NewRow("APP_B", "2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Add(second); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if e.NumItems() != 1 || e.NumBlocks() != 1 {
+		t.Errorf("NumItems = %d, NumBlocks = %d, want 1 and 1", e.NumItems(), e.NumBlocks())
+	}
+	if got, ok := e.Lookup("APP_B"); !ok || got != "2" {
+		t.Errorf("APP_B = %q, %v", got, ok)
+	}
+	if b := e.Block("APP"); b.Comment() != "late" {
+		t.Errorf("comment = %q, want it taken from the merged block", b.Comment())
+	}
+}
+
+// Load with no arguments reads ".env" from the working directory.
+func TestLoadDefaultsToDotEnv(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("APP_NAME=default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	e, err := envi.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, _ := e.Lookup("APP_NAME"); got != "default" {
+		t.Errorf("APP_NAME = %q", got)
+	}
+}
+
+// Blank lines above a section header belong to the block and come back with it.
+func TestBlankLinesBeforeHeaderPreserved(t *testing.T) {
+	t.Parallel()
+
+	const src = "TEST=0\n\n###   ---[ Section ]---   ###\nAPP_A=1\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := e.String(); got != src {
+		t.Errorf("round trip changed the document:\ngot  %q\nwant %q", got, src)
+	}
 }

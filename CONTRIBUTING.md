@@ -8,8 +8,7 @@ process and more about not breaking the two properties it sells: fidelity and sp
 The library is at the repository root; `bind/` is the struct-binding subpackage. The import path
 keeps its `/v2` suffix — that is how Go names a major version, not a directory.
 
-`v1` is frozen and off the default branch. Its defects are catalogued in
-[docs/AUDIT.md](docs/AUDIT.md) for the record; please do not resurrect it.
+`v1` is frozen and off the default branch, reachable only by its tags. Please do not resurrect it.
 
 ## Before opening a pull request
 
@@ -51,9 +50,10 @@ request rather than letting a golden test be updated quietly.
 
 **No dependencies.** Neither at runtime nor in tests. If a test needs a helper, write the helper.
 
-**Performance changes need numbers.** The budgets in
-[docs/UPGRADE-SPEC.md](docs/UPGRADE-SPEC.md) are measured, not estimated. Run the benchmarks before
-and after and put `benchstat` output in the pull request:
+**Performance changes need numbers.** Parsing a 1000-line file costs 237 µs and 4 405 allocations;
+writing it costs 22.6 µs and 5; a lookup costs 27.8 ns and none. Those are measured, not aspirational,
+and they should not get worse. Run the benchmarks before and after and put `benchstat` output in the
+pull request:
 
 ```shell
 go test -run '^$' -bench . -benchmem -count 8 > new.txt

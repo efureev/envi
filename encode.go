@@ -116,7 +116,7 @@ func (enc *Encoder) writeBlanks(bw *bufio.Writer, n int) {
 // anything was written. A block holding no visible rows is skipped entirely
 // rather than leaving a header introducing nothing.
 func (enc *Encoder) writeBlock(bw *bufio.Writer, b *Block) bool {
-	if len(b.rows) == 0 {
+	if !enc.blockHasVisibleRows(b) {
 		return false
 	}
 
@@ -143,6 +143,19 @@ func (enc *Encoder) writeBlock(bw *bufio.Writer, b *Block) bool {
 		}
 	}
 	return true
+}
+
+// blockHasVisibleRows reports whether anything in the block will be written.
+// A block whose rows are all excluded — because it is empty, or because every
+// row is commented out and commented rows are switched off — must be skipped
+// entirely rather than leaving a header introducing nothing.
+func (enc *Encoder) blockHasVisibleRows(b *Block) bool {
+	for _, r := range b.rows {
+		if !r.commented || enc.cfg.commentedRows {
+			return true
+		}
+	}
+	return false
 }
 
 // canReproduce reports whether the configuration permits writing a parsed

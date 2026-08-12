@@ -178,8 +178,8 @@ Lookups are O(1) and allocation-free. Binding resolves each type's layout once a
 thousandth config costs the same as the second.
 
 For scale: those numbers are 25–67× better than this library's own v1, whose parser recompiled a
-regular expression on every line. The full teardown, with the measurements that motivated the
-rewrite, is in [docs/AUDIT.md](docs/AUDIT.md).
+regular expression on every line — 5.5 µs and 146 allocations per line, against 4.5 ns and zero for
+a hand-written scan. That measurement is why there is no `regexp` anywhere in the module.
 
 ---
 
@@ -263,7 +263,9 @@ state between instances, so parsing, writing and binding from many goroutines at
 ## Version 1
 
 `v1` is frozen. It stays fetchable by tag (`go get github.com/efureev/envi@v1.3.1`) but receives no
-fixes and has known crashes in `Merge` and `RemoveRow`, catalogued in [docs/AUDIT.md](docs/AUDIT.md).
+fixes. It has known crashes in `Merge` and `RemoveRow`, loses comments when merging files, reorders
+every document it reads, and keeps its settings in package-level globals — so two callers in one
+process fight over them. All of it is fixed in v2, none of it will be fixed in v1.
 
 New code imports `github.com/efureev/envi/v2`. The `/v2` suffix stays in the import path even though
 the code sits at the repository root — that is simply how Go names a major version.
@@ -273,8 +275,7 @@ the code sits at the repository root — that is simply how Go names a major ver
 ## Contributing
 
 Bug reports with a failing `.env` fragment are worth their weight; they usually become a test
-verbatim. See [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/UPGRADE-SPEC.md](docs/UPGRADE-SPEC.md)
-for what is open and where this is heading.
+verbatim. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

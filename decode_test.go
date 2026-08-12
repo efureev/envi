@@ -448,3 +448,226 @@ func TestSaveThenLoadRoundTrips(t *testing.T) {
 		t.Errorf("file on disk differs from the input:\n%s", onDisk)
 	}
 }
+
+// A header appearing partway through a run of same-prefix rows introduces
+// nothing the block can own, so it must stay verbatim above its own row.
+func TestHeaderInsideRunIsKept(t *testing.T) {
+	t.Parallel()
+
+	const src = "APP_A=1\n###   ---[ Later ]---   ###\nAPP_B=2\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := e.String(); got != src {
+		t.Errorf("round trip dropped the inner header:\ngot  %q\nwant %q", got, src)
+	}
+	if b := e.Block("APP"); b == nil || b.Len() != 2 {
+		t.Errorf("block holds %v rows, want 2", b.Len())
+	}
+}
+
+// A header above a row that belongs to no block is kept the same way.
+func TestHeaderAboveTopLevelRowIsKept(t *testing.T) {
+	t.Parallel()
+
+	const src = "###   ---[ Section ]---   ###\nTEST=1\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := e.String(); got != src {
+		t.Errorf("round trip dropped the header:\ngot  %q\nwant %q", got, src)
+	}
+}
+
+// A commented duplicate arriving after a live row becomes a shadow of it.
+func TestCommentedDuplicateAfterLiveRowBecomesShadow(t *testing.T) {
+	t.Parallel()
+
+	e, err := envi.ParseString("K=live\n# K=alternative\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if e.Len() != 1 {
+		t.Fatalf("Len = %d, want 1", e.Len())
+	}
+	r := e.Get("K")
+	if r.Value() != "live" || r.IsCommented() {
+		t.Errorf("row = %q commented=%v, want the live definition", r.Value(), r.IsCommented())
+	}
+	if !r.HasShadow("alternative") {
+		t.Error("the commented duplicate was not recorded as a shadow")
+	}
+}
+
+// Two commented rows for one key fold together, and the live row that follows
+// absorbs the result. The document can no longer be reproduced line for line,
+// so it must be written from the model instead — losing nothing.
+func TestFoldedShadowsAreRenderedFromModel(t *testing.T) {
+	t.Parallel()
+
+	e, err := envi.ParseString("# K=a\n# K=b\nK=c\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	r := e.Get("K")
+	if r.Value() != "c" {
+		t.Errorf("value = %q, want the live one", r.Value())
+	}
+	for _, want := range []string{"a", "b"} {
+		if !r.HasShadow(want) {
+			t.Errorf("shadow %q lost", want)
+		}
+	}
+
+	// Whatever comes out must still parse back to the same thing.
+	out := e.String()
+	again, err := envi.ParseString(out)
+	if err != nil {
+		t.Fatalf("our own output does not parse: %v\n%s", err, out)
+	}
+	if again.String() != out {
+		t.Errorf("output is not stable:\nfirst  %q\nsecond %q", out, again.String())
+	}
+}
+
+// Several comment lines above one row join into a single multi-line comment.
+func TestMultipleCommentLinesJoin(t *testing.T) {
+	t.Parallel()
+
+	const src = "# first\n# second\n# third\nK=v\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := e.Get("K").Comment(), "first\nsecond\nthird"; got != want {
+		t.Errorf("comment = %q, want %q", got, want)
+	}
+	if got := e.String(); got != src {
+		t.Errorf("round trip changed the document:\ngot %q", got)
+	}
+}
+
+// Trailing comments and blank lines after the last assignment survive.
+func TestTrailingLinesArePreserved(t *testing.T) {
+	t.Parallel()
+
+	const src = "K=v\n\n# trailing note\n\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := e.String(); got != src {
+		t.Errorf("trailing lines lost:\ngot  %q\nwant %q", got, src)
+	}
+}
+
+// A document read as CRLF is written back as CRLF, so a Windows checkout does
+// not turn into a whole-file diff.
+func TestCRLFIsPreservedOnWrite(t *testing.T) {
+	t.Parallel()
+
+	const src = "# note\r\nAPP_A=1\r\nAPP_B=2\r\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := e.String(); got != src {
+		t.Errorf("line endings changed:\ngot  %q\nwant %q", got, src)
+	}
+}
+
+func TestScannerEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("dangling escape in a quoted value", func(t *testing.T) {
+		t.Parallel()
+		_, err := envi.ParseString(`K="abc\`)
+		var se *envi.SyntaxError
+		if !errors.As(err, &se) {
+			t.Fatalf("error %v is not a *SyntaxError", err)
+		}
+		if !strings.Contains(se.Msg, "escape") {
+			t.Errorf("message = %q, want it to mention the escape", se.Msg)
+		}
+	})
+
+	t.Run("text after a quoted value", func(t *testing.T) {
+		t.Parallel()
+		_, err := envi.ParseString(`K="abc" junk` + "\n")
+		var se *envi.SyntaxError
+		if !errors.As(err, &se) {
+			t.Fatalf("error %v is not a *SyntaxError", err)
+		}
+		if !strings.Contains(se.Msg, "unexpected") {
+			t.Errorf("message = %q", se.Msg)
+		}
+	})
+
+	t.Run("a lone sign is not a number", func(t *testing.T) {
+		t.Parallel()
+		for _, v := range []string{"+", "-"} {
+			e, err := envi.ParseString("K=" + v + "\n")
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", v, err)
+			}
+			got := encode(t, e, envi.WithQuoting(envi.QuoteAlways))
+			if want := `K="` + v + `"` + "\n"; got != want {
+				t.Errorf("got %q, want %q", got, want)
+			}
+		}
+	})
+
+	t.Run("export prefix is not swallowed when it is the key", func(t *testing.T) {
+		t.Parallel()
+		e, err := envi.ParseString("export=1\n")
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if got, ok := e.Lookup("EXPORT"); !ok || got != "1" {
+			t.Errorf("EXPORT = %q, %v", got, ok)
+		}
+	})
+}
+
+// Encoding a parsed block with options that forbid reproducing it verbatim
+// falls back to rendering the header from the model.
+func TestParsedBlockRenderedFromModel(t *testing.T) {
+	t.Parallel()
+
+	const src = "###   ---[ Section ]---   ###\n# note\nAPP_A=plain\n# APP_B=inert\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	t.Run("quoting forces a rewrite", func(t *testing.T) {
+		t.Parallel()
+		got := encode(t, e, envi.WithQuoting(envi.QuoteAlways))
+		if !strings.Contains(got, "Section") {
+			t.Errorf("header lost when rewriting:\n%s", got)
+		}
+		if !strings.Contains(got, `APP_A="plain"`) {
+			t.Errorf("value not requoted:\n%s", got)
+		}
+	})
+
+	t.Run("commented rows dropped inside a block", func(t *testing.T) {
+		t.Parallel()
+		got := encode(t, e, envi.WithCommentedRows(false), envi.WithQuoting(envi.QuoteMinimal))
+		if strings.Contains(got, "APP_B") {
+			t.Errorf("commented row survived exclusion:\n%s", got)
+		}
+		if !strings.Contains(got, "APP_A") {
+			t.Errorf("live row lost:\n%s", got)
+		}
+	})
+}

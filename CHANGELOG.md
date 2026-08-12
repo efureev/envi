@@ -12,9 +12,9 @@ The import path is `github.com/efureev/envi/v2`, and the code lives at the repos
 
 `v1` is frozen and no longer on the default branch. It stays fetchable by its tags, up to `v1.3.1`.
 
-There is no migration path by design: every entry point has a different name or signature. See
-[docs/AUDIT.md](docs/AUDIT.md) for why, and [docs/UPGRADE-SPEC.md](docs/UPGRADE-SPEC.md) for what is
-still open and where this is going.
+There is no migration path by design: every entry point has a different name or signature. The
+reason is in the Fixed section below — the defects that mattered could not be repaired without
+breaking the API they were built into.
 
 ### Added
 
@@ -46,8 +46,8 @@ still open and where this is going.
 
 ### Fixed
 
-Every defect below is catalogued in [docs/AUDIT.md](docs/AUDIT.md) and covered by a regression test
-named after it.
+Every defect below was reproduced through the public API before being fixed, and each is covered by
+a regression test named after its identifier.
 
 - **C1** — `Merge` panicked on any key absent from the receiver.
 - **C2** — `RemoveRow` panicked when no block carried the key's prefix.
