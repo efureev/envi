@@ -45,6 +45,19 @@
 // rules that need no source text. Individual rules switch off with
 // [WithoutRules].
 //
+// # Comparing documents
+//
+// [Env.Diff] reports what it would take to turn one document into another: the
+// keys added, the keys dropped and the values changed, as a [Delta] that can be
+// iterated, counted, printed or written as JSON.
+//
+// It compares what a document configures, not how it is written. Comments,
+// shadows, block membership and order produce no [Change], and a commented-out
+// row counts as absent — the view [Env.Export] takes rather than the one
+// [Env.Lookup] takes. That makes it the right tool for checking a working .env
+// against the .env.example that documents it, and the wrong one for reviewing
+// an edit to the file itself.
+//
 // # Options replace global state
 //
 // Every knob is an [Option] passed to the operation that uses it. The package

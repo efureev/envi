@@ -270,3 +270,72 @@ func ExampleWithoutRules() {
 	// Output:
 	// 2: warning: key-not-canonical: key is written as "app-name" (APP_NAME)
 }
+
+// Diff answers what changed in the configuration, not what changed in the file.
+func ExampleEnv_Diff() {
+	before, err := envi.ParseString("APP_NAME=app\nAPP_DEBUG=false\nAPP_URL=https://a.example\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+	after, err := envi.ParseString("APP_NAME=app\nAPP_URL=https://b.example\nAPP_PORT=8080\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Print(before.Diff(after))
+	// Output:
+	// - APP_DEBUG="false"
+	// ~ APP_URL: "https://a.example" -> "https://b.example"
+	// + APP_PORT="8080"
+}
+
+// The check the feature was asked for: does the working file still match the
+// example that documents it? A different value is expected — that is the point
+// of a real .env — so only the missing and the undocumented keys matter.
+func ExampleEnv_Diff_againstExample() {
+	example, err := envi.ParseString("APP_NAME=changeme\nAPP_PORT=8080\nDB_HOST=localhost\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+	actual, err := envi.ParseString("APP_NAME=my-app\nAPP_PORT=9090\nEXTRA=surprise\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for c := range example.Diff(actual).All() {
+		switch c.Kind {
+		case envi.ChangeRemoved:
+			fmt.Println("missing from .env:", c.Key)
+		case envi.ChangeAdded:
+			fmt.Println("undocumented in .env.example:", c.Key)
+		case envi.ChangeChanged:
+			// A real value differing from the placeholder is not a problem.
+		}
+	}
+	// Output:
+	// missing from .env: DB_HOST
+	// undocumented in .env.example: EXTRA
+}
+
+// A commented-out row configures nothing, so commenting a key out reads as a
+// removal — the same view Env.Export takes, and deliberately not the one
+// Env.Lookup takes.
+func ExampleEnv_Diff_commentedRows() {
+	before, err := envi.ParseString("APP_URL=https://a.example\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+	after, err := envi.ParseString("# APP_URL=https://a.example\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Print(before.Diff(after))
+	fmt.Println("still reachable through Lookup:")
+	value, ok := after.Lookup("APP_URL")
+	fmt.Printf("  %q %v\n", value, ok)
+	// Output:
+	// - APP_URL="https://a.example"
+	// still reachable through Lookup:
+	//   "https://a.example" true
+}

@@ -16,6 +16,6 @@ CLAUDE.md
 .idea/
 .vscode/
 .DS_Store
-
+upgrade.md
 # Internal working notes, not part of the package
 docs/

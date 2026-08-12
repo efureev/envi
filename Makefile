@@ -31,6 +31,7 @@ fuzz: ## short fuzz smoke over every target, as CI runs it
 	go test -run Fuzz -fuzz 'FuzzModelSurvivesEncoding$$' -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzCheck$$' -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzRegroup$$' -fuzztime 30s
+	go test -run Fuzz -fuzz 'FuzzDiff$$' -fuzztime 30s
 
 bench: ## benchmarks; compare runs with benchstat
 	go test -run '^$$' -bench . -benchmem -count 8

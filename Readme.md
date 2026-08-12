@@ -281,6 +281,51 @@ that do not need the source text.
 
 ---
 
+## Compare two files
+
+`Diff` answers what changed in the **configuration** — not what changed in the file. For the second
+question you already have `git diff`.
+
+```go
+before, _ := envi.Load(".env.bak")
+after, _ := envi.Load(".env")
+
+fmt.Print(before.Diff(after))
+```
+
+```
+- APP_DEBUG="false"
+~ APP_URL: "https://a.example" -> "https://b.example"
++ APP_PORT="8080"
+```
+
+Comments, shadows, quote style, block membership and order produce nothing: they are how a document
+is written, not what it configures. Values are quoted, because an empty value is otherwise
+indistinguishable from an unchanged one.
+
+The result is a `*Delta`, the same shape `Check` returns — `All()`, `Len()`, `Count(kind)`,
+`Empty()`, `Text(w)`, `JSON(w)`. Which is what makes the CI check the feature was built for a
+handful of lines:
+
+```go
+for c := range example.Diff(actual).All() {
+    switch c.Kind {
+    case envi.ChangeRemoved:
+        fmt.Println("missing from .env:", c.Key)       // documented but not set
+    case envi.ChangeAdded:
+        fmt.Println("undocumented:", c.Key)            // set but not in the example
+    case envi.ChangeChanged:
+        // A real value differing from the placeholder is the point.
+    }
+}
+```
+
+One thing worth knowing: **a commented-out row configures nothing**, so commenting a key out reads
+as a removal. That is the view `Export` takes. It is deliberately not the view `Lookup` takes, which
+still hands back a commented row's value — comparing configurations is the question `Diff` answers.
+
+---
+
 ## What you get that a map doesn't
 
 | | |
@@ -331,7 +376,7 @@ by hand. That is the whole gap, and it is why the scanner is written the way it 
 ## Built to be trusted with your config
 
 - **Zero dependencies.** Nothing to audit, nothing to update, no supply chain.
-- **Continuously fuzzed.** Six fuzz targets run in CI: the parser never panics, its own output
+- **Continuously fuzzed.** Seven fuzz targets run in CI: the parser never panics, its own output
   always parses back to the same document, **writing a document never drops anything it holds**,
   tidying never changes what a document says, and the checker agrees with the parser about what the
   format allows. Every input a fuzzer ever rejected is committed as a permanent regression test.
@@ -387,6 +432,13 @@ report.Text(os.Stderr)
 report.JSON(w)
 report.Err()                                    // nil, or one error naming them all
 env.Check()                                     // rules that need no source text
+
+// Compare — what changed in the configuration, not in the file
+d := before.Diff(after)                         // *Delta
+d.Empty()                                       // the two configure the same thing
+d.Count(envi.ChangeAdded)
+d.Text(os.Stderr)
+for c := range d.All() { }                      // Kind, Key, Old, New
 ```
 
 Formatting is chosen per operation, never globally:

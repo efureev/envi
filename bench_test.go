@@ -182,3 +182,33 @@ func BenchmarkTidy(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkDiff measures comparing two documents of the same shape where a
+// third of the keys carry a different value, which is the mix a real
+// .env-against-.env.example check produces.
+func BenchmarkDiff(b *testing.B) {
+	for _, n := range benchSizes {
+		left, err := envi.ParseString(genEnv(n))
+		if err != nil {
+			b.Fatal(err)
+		}
+		right, err := envi.ParseString(genEnv(n))
+		if err != nil {
+			b.Fatal(err)
+		}
+		for i := range n {
+			if i%3 == 0 {
+				right.Set(fmt.Sprintf("GRP%d_KEY%d", i/10, i), "changed")
+			}
+		}
+
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if left.Diff(right).Empty() {
+					b.Fatal("expected differences")
+				}
+			}
+		})
+	}
+}

@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — 2026-08-13
+
+### Added
+
+- **`Env.Diff`**, reporting what it would take to turn one document into another as a `Delta` of
+  `Change` values — added, removed and changed keys — with `All`, `Len`, `Count`, `Empty`, `Text`,
+  `JSON` and `String`, the same shape `Check` returns. It compares what a document configures, not
+  how it is written: comments, shadows, block membership and order produce no change, and a
+  commented-out row counts as absent, the view `Env.Export` takes rather than `Env.Lookup`.
+
 ## [2.1.0] — 2026-08-13
 
 ### Added
@@ -31,10 +41,12 @@ All notable changes to this project are documented here. The format follows
   because a converter changes the plan structurally. Binding at startup will not notice; binding in
   a loop should hold the result. Callers who register none are unaffected — the same 1.0 µs and two
   allocations for fifty fields, measured back to back.
-- Fuzz targets `FuzzCheck`, `FuzzRegroup` and `FuzzModelSurvivesEncoding`. The last asserts that
-  writing a document says everything the document holds — the property `FuzzRoundTrip` cannot see,
-  since it compares our output against our output and anything the encoder drops consistently looks
-  like a fixed point.
+- Fuzz targets `FuzzCheck`, `FuzzRegroup`, `FuzzModelSurvivesEncoding` and `FuzzDiff`.
+  `FuzzModelSurvivesEncoding` asserts that writing a document says everything the document holds —
+  the property `FuzzRoundTrip` cannot see, since it compares our output against our output and
+  anything the encoder drops consistently looks like a fixed point. `FuzzDiff` closes the other
+  loop: applying a comparison to the left document must make it configure exactly what the right one
+  does, which catches a missing, an inverted and an invented change in one property.
 
 ### Fixed
 

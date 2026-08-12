@@ -2,6 +2,7 @@ package envi_test
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 
@@ -317,4 +318,87 @@ func FuzzRegroup(f *testing.F) {
 			}
 		}
 	})
+}
+
+// FuzzDiff asserts that a comparison is complete and points the right way:
+// applying what it reports to the left document must make it configure exactly
+// what the right one does.
+//
+// That closes the loop in one property. A diff that misses a change leaves the
+// documents disagreeing; one that reports a change backwards moves the left
+// document away from the right; one that invents a change shows up as a
+// leftover on the second comparison.
+func FuzzDiff(f *testing.F) {
+	for _, s := range fuzzSeeds {
+		f.Add(s, s)
+	}
+	f.Add("A=1\nB=2\n", "A=9\nC=3\n")
+	f.Add("# K=1\n", "K=1\n")
+	f.Add("K=1\n", "# K=1\n")
+
+	f.Fuzz(func(t *testing.T, left, right string) {
+		a, err := envi.ParseString(left)
+		if err != nil {
+			t.Skip() // malformed input is FuzzParse's business
+		}
+		b, err := envi.ParseString(right)
+		if err != nil {
+			t.Skip()
+		}
+
+		// A document never differs from itself.
+		if d := a.Diff(a); !d.Empty() {
+			t.Fatalf("a document differs from itself:\n%s", d)
+		}
+
+		d := a.Diff(b)
+		for c := range d.All() {
+			if c.Key == "" {
+				t.Fatalf("change with no key: %+v", c)
+			}
+			_ = c.String()
+		}
+
+		// Apply the comparison to a fresh copy of the left document.
+		applied, err := envi.ParseString(left)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for c := range d.All() {
+			switch c.Kind {
+			case envi.ChangeAdded, envi.ChangeChanged:
+				// SetCommented(false) is not decoration. Env.Set edits whatever
+				// row it finds, and Row.SetValue leaves the commented flag
+				// alone, so setting a key whose only row is "# KEY=old" stores
+				// the value in a row that still configures nothing. Applying a
+				// change means making the key configured.
+				applied.Set(c.Key, c.New).SetCommented(false)
+			case envi.ChangeRemoved:
+				applied.Delete(c.Key)
+			}
+		}
+
+		// Both must now configure the same thing, and comparing again must
+		// find nothing left to do.
+		if again := applied.Diff(b); !again.Empty() {
+			t.Fatalf("applying the comparison did not close the gap\nleft:  %q\nright: %q\nfirst:\n%s\nleft over:\n%s",
+				left, right, d, again)
+		}
+		if want, got := configuredOf(b), configuredOf(applied); !maps.Equal(got, want) {
+			t.Fatalf("configuration differs after applying\nleft:  %q\nright: %q\ngot  %v\nwant %v",
+				left, right, got, want)
+		}
+	})
+}
+
+// configuredOf collects the keys a document actually configures, which is what
+// Diff compares: a commented-out row sets nothing.
+func configuredOf(e *envi.Env) map[string]string {
+	out := map[string]string{}
+	for r := range e.Rows() {
+		if !r.IsCommented() {
+			out[r.Key()] = r.Value()
+		}
+	}
+	return out
 }
