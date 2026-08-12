@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v2
+## [2.0.0] — 2026-08-12
 
 `v2` is a rewrite. It shares the domain model of `v1` — blocks, rows and shadows — and nothing else.
 The import path is `github.com/efureev/envi/v2`, and the code lives at the repository root; the

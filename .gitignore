@@ -1,15 +1,18 @@
-# Binaries for programs and plugins
+# Compiled objects
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test binary, build with `go test -c`
+# Test and coverage output
 *.test
+*.out
 coverage.txt
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-.idea
+# Local tooling and editor state
+CLAUDE.md
+.claude/
+.idea/
+.vscode/
 .DS_Store
