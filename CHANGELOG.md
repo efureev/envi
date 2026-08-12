@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [2.3.0] — 2026-08-13
+
+### Added
+
+- **`cmd/envi`, a command line tool.** `go install github.com/efureev/envi/v2/cmd/envi@latest` gives
+  eight commands: `fmt`, `check`, `diff`, `get`, `set`, `unset`, `export` and `json`. It exists
+  because .env files are edited from CI and shell scripts, where the usual tools are wrong for the
+  job — sed knows nothing about quoting or comments, and `source .env` is not valid shell for a
+  value holding a space or a hash.
+
+  Exit codes follow the unix convention: `0` nothing to report, `1` found what it was asked to look
+  for, `2` could not run. That lets CI tell a bad config from a mistyped path.
+
+  Throughout, "configured" means what `Env.Export` means and not what `Env.Lookup` means: a
+  commented-out row configures nothing, so `get` reports it as unset rather than handing a script a
+  value the process will never see. For the same reason `set` uncomments the row it writes to.
+
+  Editing commands name their file with `-f`. In `envi unset APP_NAME config.env` there is no way to
+  tell a key from a path by looking at it, and guessing is how a tool deletes the wrong thing.
+
+  In-place writes keep the file's permissions. `Save` writes through a temporary file, which carries
+  0600; restoring the original mode keeps an edit from showing up in version control as a permission
+  change.
+
+  The library is untouched by this release.
+
 ## [2.2.0] — 2026-08-13
 
 ### Added

@@ -5,6 +5,9 @@
 *.so
 *.dylib
 
+# Built binary
+/envi
+
 # Test and coverage output
 *.test
 *.out

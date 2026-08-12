@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help check test vet fmt lint cover fuzz bench
+.PHONY: help check test vet fmt lint cover fuzz bench build
 
 help: ## show this list
 	@grep -hE '^[a-z][a-z0-9-]*:.*##' $(MAKEFILE_LIST) | sed -e 's/:.*##/|/' | column -t -s '|'
@@ -32,6 +32,9 @@ fuzz: ## short fuzz smoke over every target, as CI runs it
 	go test -run Fuzz -fuzz 'FuzzCheck$$' -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzRegroup$$' -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzDiff$$' -fuzztime 30s
+
+build: ## build the envi command
+	go build -o envi ./cmd/envi
 
 bench: ## benchmarks; compare runs with benchstat
 	go test -run '^$$' -bench . -benchmem -count 8
