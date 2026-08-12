@@ -1,35 +1,72 @@
-# Envi is a package to manage `.env` files
+# envi
 
 [![Go package](https://github.com/efureev/envi/actions/workflows/go.yml/badge.svg)](https://github.com/efureev/envi/actions/workflows/go.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/efureev/envi)](https://goreportcard.com/report/github.com/efureev/envi)
-![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/efureev/envi)
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/efureev/envi)
-![GitHub](https://img.shields.io/github/license/efureev/envi)
+[![Go Reference](https://pkg.go.dev/badge/github.com/efureev/envi/v2.svg)](https://pkg.go.dev/github.com/efureev/envi/v2)
+[![Go Report Card](https://goreportcard.com/badge/github.com/efureev/envi/v2)](https://goreportcard.com/report/github.com/efureev/envi/v2)
+![Go version](https://img.shields.io/github/go-mod/go-version/efureev/envi?filename=v2%2Fgo.mod)
+![License](https://img.shields.io/github/license/efureev/envi)
 
-## Installation
+Read, edit and write `.env` files **without losing their shape**.
 
-As a library
+Most `.env` libraries hand you a `map[string]string` and forget the file. `envi` models the document
+itself — comments, sections, blank lines and commented-out alternatives — so a read-modify-write
+cycle changes only the line you meant to change. With the default options, a parsed file is written
+back **byte for byte identical**.
 
-```shell
-go get github.com/efureev/envi
+```go
+env, _ := envi.ParseString(src)
+env.Set("APP_DEBUG", "true")
+envi.Save(env, ".env")   // only APP_DEBUG's line differs
 ```
 
-## Description
+Zero dependencies, in the library and in its tests.
 
-`Envi` allows you to:
+## Install
 
-- parse, load and save `.env`-files
-- load multiple `.env`-files in a row
-- fully manage your data in `Env`-structure like as:
-    - division by blocks and rows
-    - commented items
-    - set item's comments (blocks and rows)
-    - add or remove items (blocks and rows)
-    - sorting items
+```shell
+go get github.com/efureev/envi/v2
+```
 
-## Usage
+```go
+import envi "github.com/efureev/envi/v2"
+```
 
-For example, `.env` file to parse:
+## Binding a config struct
+
+If all you want is your configuration typed and validated, use the `bind` subpackage. It stands on
+its own and can be the only part of `envi` you import.
+
+```go
+import "github.com/efureev/envi/v2/bind"
+
+type Config struct {
+    Name  string        `env:"APP_NAME"`
+    Port  int           `env:"APP_PORT,required"`
+    TTL   time.Duration `env:"CACHE_TTL,default=30s"`
+    Hosts []string      `env:"HOSTS,separator=;"`
+}
+
+var cfg Config
+err := bind.Load(&cfg, bind.WithOptionalFiles(".env"), bind.WithEnviron())
+```
+
+Files are read in order, each overriding the one before, and the process environment overrides them
+all. Every field that fails is reported at once, not just the first:
+
+```
+bind: 2 fields failed:
+  - Port (APP_PORT): strconv.ParseInt: parsing "eighty": invalid syntax
+  - Name (APP_NAME): bind: required value is missing
+```
+
+Supported: strings, all sized integers and floats, booleans, `time.Duration`, slices, maps
+(`key:value`), pointers, nested structs, `[]byte`, and any type implementing
+`encoding.TextUnmarshaler` — which covers `time.Time`, `net.IP` and most identifier types. A field
+without a tag takes its key from its name: `AppName` → `APP_NAME`, `HTTPPort` → `HTTP_PORT`.
+
+## The document model
+
+Given this file:
 
 ```dotenv
 ###   ---[ Application section ]---   ###
@@ -37,267 +74,116 @@ For example, `.env` file to parse:
 APP_NAME="App name"
 APP_DEBUG=false
 
-# Default dev.host
+# Default dev host
 # APP_URL=http://dev.example.com
 APP_URL=https://example.com
-
-###   ---[ NGINX cache section ]---   ###
-# Nginx cache path
-CACHE_NGINX_PATH=./storage/cache
-# Enable caching a page
-CACHE_NGINX_ENABLED=false
-
-TEST=false
-
-#APP_TRACE_LOAD=true
-DEBUGBAR_ENABLED=false
 
 #HYPE=false
 ```
 
-Here we see:
-
-- 3 `Block`s:
-    - `APP`: Has Comment. Contains rows:
-        - `APP_NAME`: Has Comment
-        - `APP_DEBUG`
-        - `APP_URL`: Has `shadow`: `http://dev.example.com`
-        - `APP_TRACE_LOAD`: Commented row
-    - `CACHE`: Has Comment. Contains rows:
-        - `CACHE_NGINX_PATH`: Has a Comment
-        - `CACHE_NGINX_ENABLED`: Has a Comment
-    - `DEBUGBAR`:
-        - `DEBUGBAR_ENABLED`
-- 2 `Row`s:
-    - `HYPE`: Commented row
-    - `TEST`: Uncommented row
-
-### Blocks
-
-The Block is defined by first occurrence `_` in row. You may set up minimum rows count to form a `Block`.
-By default, it's `1`.
-
-Block may have a comment.
+`envi` sees one **block** `APP` introduced by a header comment and holding three **rows**; a
+commented-out row `HYPE`; and on `APP_URL` a **shadow** — the commented alternative kept beside the
+live value.
 
 ```go
-block := envi.NewBlock(`app`).SetComment(`Application section`)
+env, err := envi.ParseString(src)
+
+env.Lookup("app-url")          // "https://example.com", true — keys are normalised
+env.Get("APP_URL").Comment()   // "Default dev host"
+env.Block("APP").Len()         // 3
+
+for shadow := range env.Get("APP_URL").Shadows() {
+    fmt.Println(shadow)        // http://dev.example.com
+}
 ```
 
-You may change indent after `Block`:
+## Reading and writing
 
 ```go
-envi.SetIndent(2)
+env, err := envi.Parse(r)                        // any io.Reader
+env, err := envi.ParseString(s)
+env, err := envi.ParseBytes(b)
+env, err := envi.Load(".env", ".env.local")      // later files override earlier ones
+
+env.WriteTo(w)                                   // io.WriterTo
+env.MarshalText()                                // encoding.TextMarshaler
+envi.Save(env, ".env")                           // atomic: temp file, then rename
 ```
 
-You may change a template of a block comment:
+`Decoder` and `Encoder` take the same options and share no state, so separate instances are safe to
+use from different goroutines.
 
 ```go
-envi.SetCommentTemplate(`# <-- `, ` -->`)
-// or
-envi.SetCommentTemplateByDefault()
+err := envi.NewEncoder(w, envi.WithQuoting(envi.QuoteAlways), envi.WithIndent(2)).Encode(env)
 ```
 
-You may set row count to form a block from them:
+| Option | Effect |
+|---|---|
+| `WithQuoting` | `QuotePreserve` (default), `QuoteMinimal`, `QuoteAlways` |
+| `WithOrder` | `OrderSource` (default) or `OrderSorted` |
+| `WithIndent` | blank lines after each block |
+| `WithBlockComment` | the strings wrapping a section header |
+| `WithGroupThreshold` | how many rows sharing a prefix form a block |
+| `WithComments`, `WithShadows`, `WithCommentedRows` | leave those out of the output |
+
+## Editing
 
 ```go
-envi.GroupRowsGreaterThen(1)
+env.Set("APP_PORT", "8080")                 // creates or updates; joins its block
+env.Add(envi.NewRow("HYPE", "false"))
+env.Delete("APP_DEBUG")                     // reports whether anything went
+env.Merge(other)                            // other wins, comments survive
+env.SortByKey()                             // explicit; reading never reorders
+
+for key, value := range env.All() { ... }   // iterators, no intermediate slice
+for row := range env.Rows() { ... }
+for item := range env.Items() { ... }       // *Row or *Block
+
+env.Export(true)                            // into the process environment
 ```
 
-### Rows
+## Errors
 
-A `Row` may have a comment.
+A malformed line reports where it went wrong:
 
 ```go
-row := envi.NewRow(`app-section`, 'section 345').SetComment(`Section for the unit '345'`)
+var syntaxErr *envi.SyntaxError
+if errors.As(err, &syntaxErr) {
+    fmt.Println(syntaxErr.Line, syntaxErr.Col, syntaxErr.Msg)
+}
 ```
 
-Will be:
+## Performance
 
-```dotenv
-# Section for the unit '345'
-APP_SECTION="section 345"
-```
+Against v1 on the same machine, parsing a 1000-line file (Go 1.26, Apple M5 Pro):
 
-A `Row` may be commented.
+| | v1 | v2 | |
+|---|---:|---:|---|
+| Parse | 11.27 ms | **240.8 µs** | 47× faster |
+| Parse throughput | 2.8 MiB/s | **131.8 MiB/s** | |
+| Parse allocations | 295 687 | **4 405** | 67× fewer |
+| Write | 568.9 µs | **22.6 µs** | 25× faster |
+| Lookup | 1.36 µs | **30.7 ns** | 44× faster, zero allocations |
 
-```go
-row.Commented()
-```
+The parser is a hand-written single-pass scanner: no regular expressions, no line-length limit, and
+positions tracked for error reporting. Benchmarks live in the repository; the reasoning is in
+[docs/AUDIT.md](docs/AUDIT.md) and [docs/UPGRADE-SPEC.md](docs/UPGRADE-SPEC.md).
 
-Will be:
+## Concurrency
 
-```dotenv
-# Section for the unit '345'
-# APP_SECTION="section 345"
-```
+An `*Env` must not be mutated concurrently — guard it like any other mutable value. `Decoder`,
+`Encoder` and `bind` share no state between instances, so parsing, encoding and binding from several
+goroutines at once are safe.
 
-A `Row` may be a part of `Block` or not.
+## Version 1
 
-```go
-env := envi.Env{}
-block := envi.NewBlock(`app`).AddRow(`session`, `test`)
-env.Add(block, NewRow(`app-hash`, `sha-256`))
+`v1` is frozen. It is still fetchable by tag — `go get github.com/efureev/envi@v1.3.1` — but its
+code no longer lives on the default branch, and it will receive no fixes. It has known defects,
+including crashes in `Merge` and `RemoveRow`; they are listed in [docs/AUDIT.md](docs/AUDIT.md).
 
-env.Save(`.env.local`)
-```
+New code imports `github.com/efureev/envi/v2`. The `/v2` suffix stays in the import path even though
+the code sits at the repository root — that is how Go identifies a major version.
 
-Will be:
+## License
 
-```dotenv
-Section for the unit '345'
-APP_SESSION="sha-256"
-```
-
-### How to load `.env` files
-
-```go
-env, err := envi.Load(`stubs/.env`) // for single file
-
-// to override multi files
-env, err := envi.Load(`stubs/.env`, `stubs/.env.development`, `stubs/.env.development.local`)
-
-/// ...
-
-env.Save(`.env.finish`)
-```
-
-### How to marshal `Env`
-
-Convert data to slice of `row`s
-
-```go
-lines := env.MarshalToSlice()
-```
-
-Convert data to string
-
-```go
-text, err := env.Marshal()
-```
-
-Marshaling settings:
-
-```go
-// Marshal a data without commented rows
-envi.SetMarshalingWithoutCommentedRows()
-
-// Marshal a data without comments
-envi.SetMarshalingWithoutComments()
-
-// Marshal a data without `shadows`*
-envi.SetMarshalingWithoutShadows()
-```
-
-*`shadow` - it's a commented example row. For instance:
-
-```dotenv
-# for docker
-# REDIS_HOST=redis
-# not for docker: 127.0.0.1
-#REDIS_HOST=10.212.12.2
-REDIS_HOST=127.0.0.1
-```
-
-`REDIS_HOST=redis` & `REDIS_HOST=10.212.12.2` - are shadows for row `REDIS_HOST=127.0.0.1`.
-
-### How to manipulate data after parsing `.env` files
-
-```go
-env, err := envi.Load(`stubs/.env`)
-
-// Total count rows (including in blocks)
-env.Count()
-
-// To receive a row by key
-row := env.Get(`APP_URL`)
-
-// To receive a block by prefix
-block := env.GetBlock(`app`)
-
-// To remove a row from data-structure
-env.RemoveRow(`app-url`)
-
-// To remove a Block from data-structure
-env.RemoveGroup(`app`)
-
-// To add a row or a block
-env.Add(NewRow(`key`, `val`))
-env.Add(NewBlock(`prefix`))
-
-// To merge
-env, err := envi.Load(`stubs/.env`)
-env2, err := envi.Load(`stubs/.env.local`)
-env.Merge(env2)
-
-// To merge items
-env.MergeItems(block1, row1, row3, block2)
-
-// To set system environment
-override := true // override existing envs
-env.SetEnv(override)
-```
-
-In blocks
-
-```go
-
-// To create a new Block
-block := envi.NewBlock(`APP`)
-
-// To Receive a Block from `Envi` 
-block := env.GetBlock(`APP`)
-
-// Rows count in the block
-block.Count()
-
-// To receive a row from a block by key without block's prefix. Not: `app-hash`!
-r = block.GetRow(`hash`)
-
-// To receive a row from a block by key with block's prefix. Allow: `app-hash`
-r = block.GetPrefixedRow(`hash`)
-
-// To add rows into a block
-block.AddRows(rows2, rows1, envi.NewRow(`section`, `1`), ...)
-
-// To add fully prefixed rows
-block.AddPrefixedRows(envi.NewRow(`APP-section`, `1`), ...)
-
-// To set block's comment
-block.SetComment(`New Comment`)
-
-// To merge with other block
-block.MergeBlock(block2)
-
-// To merge with row
-block.MergeRow(row)
-
-// To find out if this row exists
-block.HasRow(row)
-
-// To remove a row from the Block by key
-block.RemoveRow(`section`)
-
-// To remove a row from the Block by fully key
-block.RemovePrefixedRow(`app-section`)
-```
-
-In rows
-
-```go
-
-// To create a new row
-row := envi.NewRow(`app-section`, `two`)
-
-// To set a comment
-row.SetComment(`new section`)
-
-// To comment row
-row.Commented()
-
-// To merge with other row
-row.Merge()
-
-// To get full key
-row.GetFullKey()
-
-```
+[MIT](LICENSE)

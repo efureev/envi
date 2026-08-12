@@ -1,0 +1,14 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  # У библиотеки нет рантайм-зависимостей; записи ниже нужны, чтобы отследить
+  # появление незапланированной зависимости и подъём тулчейна.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly

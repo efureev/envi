@@ -1,0 +1,55 @@
+# The linter runs clean, and is expected to stay that way: a finding here means
+# either a real defect or a rule worth arguing about explicitly, never noise to
+# be lived with.
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - errorlint # errors compared with == instead of errors.Is
+    - gocritic
+    - misspell
+    - nilerr
+    - perfsprint # fmt.Sprintf where a cheaper conversion exists
+    - prealloc # slices grown in a loop without a known-length allocation
+    - revive
+    - unconvert
+    - wastedassign
+
+  settings:
+    errcheck:
+      # bufio.Writer records the first write error and replays it from Flush,
+      # which the encoder does check. Checking every intermediate write would
+      # add noise without catching anything the flush does not.
+      exclude-functions:
+        - (*bufio.Writer).Write
+        - (*bufio.Writer).WriteString
+        - (*bufio.Writer).WriteByte
+        - (*bufio.Writer).WriteRune
+    revive:
+      rules:
+        # Every exported symbol carries a doc comment. This is what keeps
+        # docs/AUDIT.md A7 (godoc entirely empty in v1) from recurring.
+        - name: exported
+          arguments: [checkPublicInterface]
+        - name: package-comments
+    gocritic:
+      enabled-tags:
+        - performance
+        - diagnostic
+        - style
+      disabled-checks:
+        - whyNoLint
+
+  exclusions:
+    generated: lax
+    rules:
+      # Test helpers may ignore errors that production code must not.
+      - path: _test\.go$
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
