@@ -1,0 +1,2 @@
+go test fuzz v1
+string("APP_URL=0\nAPP_URL=\n0_0=\nAPP_URL=")

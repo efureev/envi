@@ -138,6 +138,93 @@ key across a fleet of repositories.
 
 ---
 
+## Tidy a file that got away from you
+
+Real `.env` files drift. Keys land wherever the last hurried edit put them, prefixes end up
+scattered, sections lose their members. `Regroup` gathers every key sharing a prefix into one block,
+wherever those keys sat; `Tidy` does that and sorts.
+
+```dotenv
+###   ---[ Application ]---   ###
+APP_NAME=one
+DB_HOST=localhost
+APP_DEBUG=false
+DB_PORT=5432
+LONE=x
+```
+
+```go
+env, _ := envi.Load(".env")
+env.Tidy()
+envi.Save(env, ".env")
+```
+
+```dotenv
+###   ---[ Application ]---   ###
+APP_DEBUG=false
+APP_NAME=one
+
+DB_HOST=localhost
+DB_PORT=5432
+
+LONE=x
+```
+
+Section headers survive the move, and so do row comments and shadows. How many rows it takes to
+form a block is yours to choose: `env.Regroup(envi.WithGroupThreshold(3))` dissolves both blocks
+above, since neither has three rows, and demotes the header to an ordinary comment on the first row
+it introduced rather than dropping it.
+
+A row that moves gives up its byte-for-byte rendering: the blank lines and comments recorded above
+it described where it used to be. A document already in order is left untouched and still writes
+back identical, so calling `Regroup` before a save costs nothing when there is nothing to do.
+
+---
+
+## Check a file before you trust it
+
+`Check` reads and validates in one pass. Unlike `Parse` it does not stop at the first malformed
+line — one call tells you everything wrong with the file.
+
+```go
+env, report, err := envi.CheckFile(".env")   // err is only for I/O
+if !report.OK() {
+    report.Text(os.Stderr)
+    os.Exit(1)
+}
+```
+
+```
+1: warning: key-not-canonical: key is written as "app-name" (APP_NAME)
+2:9: error: syntax: unterminated quoted value
+4: error: duplicate-key: key is already defined on line 3, and that value is discarded (APP_URL)
+5: warning: empty-value: value is empty (EMPTY)
+6: warning: unquoted-value: bare value holds '$' (PASS)
+7: error: key-invalid: key is not a usable environment variable name (1BAD)
+```
+
+Line and column, in the form editors and CI logs turn into links. `report.JSON(w)` writes the same
+findings as objects; `report.Err()` collapses them into one error for callers that only want to know
+whether to carry on.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `syntax` | error | a line that does not parse — all of them, not just the first |
+| `duplicate-key` | error | a key given a live value twice, silently discarding the first |
+| `key-invalid` | error | a name no shell would accept, such as one starting with a digit |
+| `key-not-canonical` | warning | lower case, hyphens — anything rewritten on output |
+| `empty-value` | warning | a live row with nothing on the right of the `=` |
+| `unquoted-value` | warning | a bare value holding `$`, `` ` ``, a quote or a backslash |
+
+A commented-out alternative beside a live value is a *shadow*, an idiom this format is built around,
+and is never reported as a duplicate. Rules switch off by name: `envi.WithoutRules(envi.RuleEmptyValue)`.
+
+The document comes back too, unparsable lines and all, so checking a file and writing it back never
+deletes what it could not understand. For a document already in memory, `env.Check()` runs the rules
+that do not need the source text.
+
+---
+
 ## What you get that a map doesn't
 
 | | |
@@ -147,6 +234,8 @@ key across a fleet of repositories.
 | **Order** | Source order preserved; sorting is something you ask for, never a side effect |
 | **Blocks** | Rows sharing a prefix group into a `Block` you can address as a unit |
 | **Formatting** | Quote style, spacing, blank lines, CRLF vs LF — all reproduced |
+| **Tidying** | `Regroup` and `Tidy` put a drifted file back in order, comments and all |
+| **Validation** | `Check` reports every problem in one pass, with line and column |
 | **Positions** | A malformed line reports its line *and* column, not "invalid format" |
 | **No limits** | No 64 KiB line cap; a base64 certificate in one value parses fine |
 
@@ -186,9 +275,10 @@ a hand-written scan. That measurement is why there is no `regexp` anywhere in th
 ## Built to be trusted with your config
 
 - **Zero dependencies.** Nothing to audit, nothing to update, no supply chain.
-- **Continuously fuzzed.** Three fuzz targets run in CI: the parser never panics, and its own output
-  always parses back to the same document. Every input a fuzzer ever rejected is committed as a
-  permanent regression test.
+- **Continuously fuzzed.** Six fuzz targets run in CI: the parser never panics, its own output
+  always parses back to the same document, **writing a document never drops anything it holds**,
+  tidying never changes what a document says, and the checker agrees with the parser about what the
+  format allows. Every input a fuzzer ever rejected is committed as a permanent regression test.
 - **Race-tested and order-shuffled.** `go test -race -shuffle=on` on Linux, macOS and Windows. The
   package holds no mutable global state, so two libraries in one process cannot fight over settings.
 - **Atomic writes.** `Save` writes a temporary file and renames it. An interrupted run cannot leave
@@ -225,9 +315,22 @@ for item := range env.Items() { }               // *Row or *Block
 env.Set("K", "v")
 env.Add(envi.NewRow("HYPE", "false"))
 env.Delete("K")
+env.DeleteBlock("APP")
 env.Merge(other)
-env.SortByKey()
 env.Export(true)                                // into os.Environ
+
+// Arrange
+env.SortByKey()                                 // sort, leave grouping alone
+env.Regroup()                                   // gather scattered prefixes into blocks
+env.Tidy()                                      // regroup, then sort
+
+// Check
+env, report, err := envi.CheckFile(".env")      // every problem, not just the first
+report.OK()                                     // no errors, warnings allowed
+report.Text(os.Stderr)
+report.JSON(w)
+report.Err()                                    // nil, or one error naming them all
+env.Check()                                     // rules that need no source text
 ```
 
 Formatting is chosen per operation, never globally:
@@ -269,6 +372,35 @@ process fight over them. All of it is fixed in v2, none of it will be fixed in v
 
 New code imports `github.com/efureev/envi/v2`. The `/v2` suffix stays in the import path even though
 the code sits at the repository root — that is simply how Go names a major version.
+
+Nothing v1 could do was dropped; most of it was renamed, and the rest got better. If you are looking
+for something by its old name:
+
+| v1 | v2 |
+|---|---|
+| `Env.GetBlock(prefix)` | `Env.Block(prefix)` |
+| `Env.Count()`, `BlocksCount()` | `Env.Len()`, `Env.NumBlocks()`, `Env.NumItems()` |
+| `Env.RemoveRow`, `RemoveBlock` | `Env.Delete`, `Env.DeleteBlock` |
+| `Env.Sorting()` | `Env.SortByKey()`, or `Env.Tidy()` to group as well |
+| `SortByBlocks` (on read) | `Env.Regroup()`, on demand rather than behind your back |
+| `Env.MergeItems(...)` | `Env.Add(...)` — adding an existing key merges it |
+| `Env.SetEnv(override)` | `Env.Export(override)` |
+| `Env.Marshal()`, `MarshalToSlice()` | `Env.String()`, `Env.MarshalText()`, `Env.WriteTo(w)` |
+| `Block.AddRows`, `AddPrefixedRows` | `Block.Add(rows...)` — takes either form of key |
+| `Block.GetRow`, `GetPrefixedRow` | `Block.Get(key)` — takes either form |
+| `Block.RemoveRow`, `RemovePrefixedRow` | `Block.Delete(key)` |
+| `Block.HasRow`, `Block.Count` | `Block.Has`, `Block.Len` |
+| `Block.MergeBlock`, `MergeRow` | `Env.Add`, `Env.Merge` |
+| `row.Commented()` | `Row.SetCommented(bool)` — reversible |
+| `row.GetFullKey()` | `Row.Key()` |
+| `row.HasShadows`, `AddShadows` | `Row.HasShadow`, `Row.AddShadow`, `Row.Shadows()` |
+| `SetIndent`, `SetCommentTemplate` | `WithIndent`, `WithBlockComment` |
+| `GroupRowsGreaterThen(n)` | `WithGroupThreshold(n)` |
+| `SetMarshalingWithout…` | `WithComments`, `WithShadows`, `WithCommentedRows` |
+
+The last four rows are the substantive change: v1 kept those settings in package-level globals, so
+two callers in one process overwrote each other's formatting. In v2 they are options passed to the
+one operation that uses them.
 
 ---
 

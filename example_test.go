@@ -175,3 +175,98 @@ func ExampleSave() {
 	fmt.Print(string(written))
 	// Output: APP_NAME=example
 }
+
+// Regroup gathers keys that drifted apart back into their blocks. Rows keep
+// their comments, and a block that already holds the right rows is untouched.
+func ExampleEnv_Regroup() {
+	const src = `APP_NAME=one
+DB_HOST=localhost
+APP_DEBUG=false
+DB_PORT=5432
+LONE=x
+`
+
+	env, err := envi.ParseString(src)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	env.Regroup()
+
+	fmt.Print(env)
+	// Output:
+	// APP_NAME=one
+	// APP_DEBUG=false
+	//
+	// DB_HOST=localhost
+	// DB_PORT=5432
+	//
+	// LONE=x
+}
+
+// Tidy regroups and then sorts, including the rows inside each block.
+func ExampleEnv_Tidy() {
+	const src = `ZED=last
+###   ---[ Application ]---   ###
+APP_NAME=one
+DB_HOST=localhost
+APP_DEBUG=false
+`
+
+	env, err := envi.ParseString(src)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	env.Tidy()
+
+	fmt.Print(env)
+	// Output:
+	// ###   ---[ Application ]---   ###
+	// APP_DEBUG=false
+	// APP_NAME=one
+	//
+	// DB_HOST=localhost
+	//
+	// ZED=last
+}
+
+// Check reports everything wrong with a file in one pass, where Parse would
+// have stopped at the first malformed line.
+func ExampleCheck() {
+	const src = `app-name=x
+APP_URL="unterminated
+DUP=1
+DUP=2
+EMPTY=
+`
+
+	_, report, err := envi.CheckString(src)
+	if err != nil {
+		log.Fatal(err) // only a failure of the reader
+	}
+
+	fmt.Println("valid:", report.OK())
+	fmt.Print(report)
+	// Output:
+	// valid: false
+	// 1: warning: key-not-canonical: key is written as "app-name" (APP_NAME)
+	// 2:9: error: syntax: unterminated quoted value
+	// 4: error: duplicate-key: key is already defined on line 3, and that value is discarded (DUP)
+	// 5: warning: empty-value: value is empty (EMPTY)
+}
+
+// Rules switch off by name, so a project can accept what it does not consider a
+// problem without giving up the rest of the check.
+func ExampleWithoutRules() {
+	const src = "EMPTY=\napp-name=x\n"
+
+	_, report, err := envi.CheckString(src, envi.WithoutRules(envi.RuleEmptyValue))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Print(report)
+	// Output:
+	// 2: warning: key-not-canonical: key is written as "app-name" (APP_NAME)
+}

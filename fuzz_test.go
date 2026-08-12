@@ -2,6 +2,7 @@ package envi_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	envi "github.com/efureev/envi/v2"
@@ -24,6 +25,8 @@ var fuzzSeeds = []string{
 	"# just a comment",
 	"#K=v",
 	"# K=v\nK=w",
+	"# K=1\n# K=2\n",
+	"K=1\n# K=2\n",
 	"###   ---[ Section ]---   ###\nAPP_A=1\nAPP_B=2",
 	"A_B_C=1",
 	"_LEADING=1",
@@ -134,6 +137,183 @@ func FuzzRoundTripRewritten(f *testing.F) {
 			}
 			if got != v {
 				t.Fatalf("value for %q changed: %q became %q\noutput:\n%q", k, v, got, once)
+			}
+		}
+	})
+}
+
+// FuzzModelSurvivesEncoding asserts that writing a document says everything the
+// document holds: reading the output back must give the same rows, with the
+// same values, the same commented flags and the same shadows.
+//
+// This is the property FuzzRoundTrip cannot see. That target compares our own
+// output against our own output, so anything the encoder drops consistently
+// looks like a fixed point — which is exactly how a repeated commented key came
+// to lose a line and go unnoticed. Byte identity is deliberately not asserted:
+// a key stated twice legitimately comes back rearranged. Nothing may vanish.
+func FuzzModelSurvivesEncoding(f *testing.F) {
+	for _, s := range fuzzSeeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, in string) {
+		first, err := envi.ParseString(in)
+		if err != nil {
+			t.Skip() // malformed input is FuzzParse's business
+		}
+
+		out := first.String()
+		second, err := envi.ParseString(out)
+		if err != nil {
+			t.Fatalf("our own output does not parse: %v\noutput:\n%q", err, out)
+		}
+
+		want := slices.Collect(first.Rows())
+		got := slices.Collect(second.Rows())
+		if len(got) != len(want) {
+			t.Fatalf("row count %d became %d\ninput:\n%q\noutput:\n%q", len(want), len(got), in, out)
+		}
+
+		for i, w := range want {
+			g := got[i]
+			switch {
+			case g.Key() != w.Key():
+				t.Fatalf("row %d: key %q became %q\noutput:\n%q", i, w.Key(), g.Key(), out)
+			case g.Value() != w.Value():
+				t.Fatalf("row %d (%s): value %q became %q\noutput:\n%q", i, w.Key(), w.Value(), g.Value(), out)
+			case g.IsCommented() != w.IsCommented():
+				t.Fatalf("row %d (%s): commented %v became %v\noutput:\n%q", i, w.Key(), w.IsCommented(), g.IsCommented(), out)
+			}
+			ws := slices.Collect(w.Shadows())
+			gs := slices.Collect(g.Shadows())
+			if !slices.Equal(gs, ws) {
+				t.Fatalf("row %d (%s): shadows %v became %v\ninput:\n%q\noutput:\n%q",
+					i, w.Key(), ws, gs, in, out)
+			}
+		}
+	})
+}
+
+// FuzzCheck asserts the checker's contract: it accepts anything, never panics,
+// and agrees with the parser about what is valid. The last part is what keeps
+// the recovering read and the fail-fast one from drifting apart — the two share
+// a scanner, and only one of them is exercised by the other fuzz targets.
+func FuzzCheck(f *testing.F) {
+	for _, s := range fuzzSeeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, in string) {
+		env, rep, err := envi.CheckString(in)
+		if err != nil {
+			t.Fatalf("Check returned an error for a string reader: %v", err)
+		}
+		if env == nil || rep == nil {
+			t.Fatal("Check returned nothing without an error")
+		}
+
+		_ = rep.String()
+		_ = rep.Len()
+		_ = rep.Err()
+		for p := range rep.All() {
+			if p.Rule == "" {
+				t.Errorf("finding with no rule: %+v", p)
+			}
+			if p.Line < 0 || p.Col < 0 {
+				t.Errorf("finding with a negative position: %+v", p)
+			}
+		}
+
+		// The two reads must agree about what the format allows. Only the syntax
+		// rule speaks to that: the parser is happy to fold a duplicate key,
+		// which the checker reports but which is not a parse failure.
+		syntax := 0
+		for p := range rep.All() {
+			if p.Rule == envi.RuleSyntax {
+				syntax++
+			}
+		}
+		_, perr := envi.ParseString(in)
+		if (syntax == 0) != (perr == nil) {
+			t.Fatalf("%d syntax findings but Parse error = %v\nreport:\n%s", syntax, perr, rep)
+		}
+		if perr != nil && syntax < 1 {
+			t.Fatalf("Parse failed with %v but the checker found no syntax problem", perr)
+		}
+	})
+}
+
+// FuzzRegroup asserts that tidying rearranges a document without changing what
+// it says, and that it settles: regrouping twice is regrouping once, and the
+// output regroups to itself.
+func FuzzRegroup(f *testing.F) {
+	for _, s := range fuzzSeeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, in string) {
+		for _, tc := range []struct {
+			name string
+			tidy func(*envi.Env)
+		}{
+			{"Regroup", func(e *envi.Env) { e.Regroup() }},
+			{"Tidy", func(e *envi.Env) { e.Tidy() }},
+		} {
+			e, err := envi.ParseString(in)
+			if err != nil {
+				t.Skip() // malformed input is FuzzParse's business
+			}
+
+			want := map[string]string{}
+			for k, v := range e.All() {
+				want[k] = v
+			}
+
+			tc.tidy(e)
+
+			got := map[string]string{}
+			for k, v := range e.All() {
+				got[k] = v
+			}
+			if len(got) != len(want) {
+				t.Fatalf("%s changed the key count: %d became %d", tc.name, len(want), len(got))
+			}
+			for k, v := range want {
+				if have, ok := got[k]; !ok || have != v {
+					t.Fatalf("%s changed %q: %q became %q (present: %v)", tc.name, k, v, have, ok)
+				}
+			}
+			for k := range got {
+				if e.Get(k) == nil {
+					t.Fatalf("%s left %q unreachable through Get", tc.name, k)
+				}
+			}
+
+			once := e.String()
+			tc.tidy(e)
+			if twice := e.String(); twice != once {
+				t.Fatalf("%s is not idempotent\nfirst:  %q\nsecond: %q", tc.name, once, twice)
+			}
+
+			// The output must come back as the same document. Byte identity is
+			// deliberately not asserted here: reproducing input line for line
+			// is the parser's property, tested by FuzzRoundTrip, and a tidied
+			// document has given it up by design.
+			again, err := envi.ParseString(once)
+			if err != nil {
+				t.Fatalf("%s output does not parse: %v\noutput:\n%q", tc.name, err, once)
+			}
+			for k, v := range got {
+				if have, ok := again.Lookup(k); !ok || have != v {
+					t.Fatalf("%s output lost %q=%q on the way back (got %q, present %v)\noutput:\n%q",
+						tc.name, k, v, have, ok, once)
+				}
+			}
+			tc.tidy(again)
+			for k, v := range got {
+				if have, ok := again.Lookup(k); !ok || have != v {
+					t.Fatalf("%s does not settle: %q=%q became %q (present %v)", tc.name, k, v, have, ok)
+				}
 			}
 		}
 	})

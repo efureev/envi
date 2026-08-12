@@ -75,6 +75,17 @@ func (r *Row) dropRaw() {
 	r.parsed = false
 }
 
+// dropLine forgets the recorded rendering of the assignment while keeping the
+// lines above it.
+//
+// It is for a change that invalidates what the row says but not what precedes
+// it. The lines above belong to no other row, so discarding them would delete
+// input outright — a blank line or a comment that nothing else records.
+func (r *Row) dropLine() {
+	r.rawLine = ""
+	r.parsed = false
+}
+
 // Comment returns the comment attached above the row, without the leading "# "
 // of each line. A multi-line comment is joined with newlines.
 func (r *Row) Comment() string { return r.comment }

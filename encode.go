@@ -84,6 +84,16 @@ func (enc *Encoder) ordered(e *Env) []Item {
 	slices.SortStableFunc(items, func(x, y Item) int {
 		return strings.Compare(x.Key(), y.Key())
 	})
+	// The rows inside a block are sorted too, so that sorted output means the
+	// same thing here as it does in [Env.SortByKey]. The block is copied first:
+	// writing a document must never rearrange it.
+	for i, it := range items {
+		if b, ok := it.(*Block); ok {
+			c := b.clone()
+			c.sortRows()
+			items[i] = c
+		}
+	}
 	return items
 }
 
@@ -153,8 +163,16 @@ func (enc *Encoder) blockHasVisibleRows(b *Block) bool {
 // canReproduce reports whether the configuration permits writing a parsed
 // document back verbatim. Any option that changes how a row should look rules
 // it out, because the recorded lines record the other rendering.
+//
+// Sorted output rules it out as well, for the same reason [Env.Regroup] drops
+// renderings: a row's recorded prefix lines are the blank lines and comments
+// that sat above it in the source, and once the order changes they describe
+// somebody else's neighbourhood.
 func (enc *Encoder) canReproduce() bool {
-	return enc.cfg.quoting == QuotePreserve && enc.cfg.comments && enc.cfg.shadows
+	return enc.cfg.quoting == QuotePreserve &&
+		enc.cfg.comments &&
+		enc.cfg.shadows &&
+		enc.cfg.order == OrderSource
 }
 
 func (enc *Encoder) writeRawLines(bw *bufio.Writer, lines []string) {
@@ -171,12 +189,20 @@ func (enc *Encoder) writeRow(bw *bufio.Writer, r *Row) bool {
 		return false
 	}
 
+	// The lines recorded above the row are authoritative for everything that
+	// precedes the assignment, the row's comment included, so writing both
+	// would state it twice. A row whose assignment has been rewritten can still
+	// have them: see [Row.dropLine].
+	above := enc.canReproduce() && len(r.rawPrefix) > 0
+	if above {
+		enc.writeRawLines(bw, r.rawPrefix)
+	}
+
 	// Faithful path: a row that came from input and has not been touched is
 	// written back exactly as it was read, down to spacing and quote style.
 	// A canonical assignment carries no verbatim copy, because rendering it
 	// afresh produces the same bytes.
 	if enc.canReproduce() && r.parsed {
-		enc.writeRawLines(bw, r.rawPrefix)
 		if r.rawLine != "" {
 			bw.WriteString(r.rawLine)
 			bw.WriteString(enc.eol)
@@ -186,7 +212,7 @@ func (enc *Encoder) writeRow(bw *bufio.Writer, r *Row) bool {
 		return true
 	}
 
-	if r.comment != "" && enc.cfg.comments {
+	if r.comment != "" && enc.cfg.comments && !above {
 		for line := range strings.SplitSeq(r.comment, "\n") {
 			bw.WriteString("# ")
 			bw.WriteString(line)
@@ -194,17 +220,30 @@ func (enc *Encoder) writeRow(bw *bufio.Writer, r *Row) bool {
 		}
 	}
 
-	// Shadows are alternatives to a live value; a row that is itself commented
-	// out has nothing for them to shadow.
-	if !r.commented && enc.cfg.shadows {
-		for _, s := range r.shadows {
-			bw.WriteString("# ")
-			enc.writeAssignment(bw, r.key, s)
-		}
+	// Shadows go back where they were read. A live row absorbs them from the
+	// commented lines directly above it, so they are written above. A commented
+	// row can only have picked one up from a later statement of the same key —
+	// nothing absorbs shadows upwards into an inert row — so its shadows are
+	// written below. Writing them on the wrong side would reorder the file;
+	// writing none at all, as this once did for a commented row, deleted them.
+	if enc.cfg.shadows && !r.commented {
+		enc.writeShadows(bw, r)
 	}
 
 	enc.writeAssignmentLine(bw, r)
+
+	if enc.cfg.shadows && r.commented {
+		enc.writeShadows(bw, r)
+	}
 	return true
+}
+
+// writeShadows writes a row's shadows, one commented assignment each.
+func (enc *Encoder) writeShadows(bw *bufio.Writer, r *Row) {
+	for _, s := range r.shadows {
+		bw.WriteString("# ")
+		enc.writeAssignment(bw, r.key, s)
+	}
 }
 
 // writeAssignmentLine writes the assignment itself, without the comments and

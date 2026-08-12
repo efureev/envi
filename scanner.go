@@ -17,6 +17,7 @@ const (
 	lineHeader                    // a comment matching the block header template
 	lineCommented                 // a commented-out assignment: "# KEY=value"
 	lineAssign                    // a live assignment
+	lineInvalid                   // nothing the parser can make sense of
 )
 
 // lineInfo is what the scanner reports for one line. Its string fields are
@@ -34,6 +35,28 @@ type lineInfo struct {
 	// text is the comment text: the body of a lineComment or lineHeader, or
 	// the trailing comment of a lineAssign.
 	text string
+
+	// check is what only a check needs to know, nil while parsing. It points
+	// into the scanner and is valid until the next line is read.
+	//
+	// Keeping it behind a pointer is not fastidiousness: lineInfo is zeroed
+	// once per line of input, and carrying the three fields inline cost about
+	// 2% of a parse over the 1000-row benchmark.
+	check *lineCheck
+}
+
+// lineCheck carries the observations a [Check] makes about a line and a parse
+// has no use for.
+type lineCheck struct {
+	// line is the 1-based number of the line.
+	line int
+
+	// keyRaw is the key as written, set only when normalising changed it.
+	keyRaw string
+
+	// bareSpecial is a byte of an unquoted value that another reader of the
+	// file may treat specially, 0 when there is none.
+	bareSpecial byte
 }
 
 // A scanner turns a byte stream into classified lines without regular
@@ -56,6 +79,11 @@ type scanner struct {
 	// written on Windows is not silently converted to LF — which would show
 	// up as a diff on every line.
 	eol string
+
+	// lc is the storage handed out through lineInfo.check, reused across lines.
+	// check turns it on; parsing leaves it off and pays nothing for it.
+	lc    lineCheck
+	check bool
 
 	headerBefore, headerAfter []byte
 }
@@ -83,7 +111,11 @@ func (s *scanner) scan(out *lineInfo) (bool, error) {
 	}
 	s.lineNo++
 	if err := s.classify(line, out); err != nil {
-		return false, err
+		// The line was read whole — readLine always stops at a terminator — so
+		// out describes it and the reader is left on the next line. A caller
+		// collecting problems can therefore carry on instead of abandoning the
+		// document at the first malformed line.
+		return true, err
 	}
 	return true, nil
 }
@@ -122,6 +154,10 @@ func (s *scanner) readLine() ([]byte, error) {
 // classify decides what the line is and fills out.
 func (s *scanner) classify(line []byte, out *lineInfo) error {
 	*out = lineInfo{}
+	if s.check {
+		s.lc = lineCheck{line: s.lineNo}
+		out.check = &s.lc
+	}
 
 	trimmed := trimSpace(line)
 	if len(trimmed) == 0 {
@@ -155,12 +191,24 @@ func (s *scanner) classify(line []byte, out *lineInfo) error {
 
 	key, value, comment, perr := s.parseAssign(trimmed)
 	if perr != nil {
+		// Describe the line even though it did not parse, so that a caller
+		// collecting problems can keep it in the document verbatim rather than
+		// dropping it on the way through.
+		out.kind = lineInvalid
+		out.raw = string(line)
 		return &SyntaxError{Line: s.lineNo, Col: perr.col, Msg: perr.msg, Src: string(line)}
 	}
 	out.kind = lineAssign
 	out.key = NormalizeKey(string(key))
 	out.value = string(value)
 	out.text = string(comment)
+	if s.check {
+		// Comparing a []byte against a string does not allocate; keeping the
+		// original does, which is why only a key that changed keeps one.
+		if string(key) != out.key {
+			s.lc.keyRaw = string(key)
+		}
+	}
 
 	// A line already in the form the encoder produces needs no verbatim copy:
 	// re-rendering reproduces it byte for byte. Most lines of a real .env are
@@ -247,6 +295,10 @@ func (s *scanner) parseAssign(line []byte) (key, value, comment []byte, perr *pa
 			i++
 		}
 		value = trimRightSpace(line[vs:i])
+		if s.check {
+			// A quoted value is not asked: quoting is the answer.
+			s.lc.bareSpecial = specialByte(value)
+		}
 	}
 
 	i = skipSpace(line, i)
@@ -335,6 +387,20 @@ func stripCommentMarker(b []byte) []byte {
 		i++
 	}
 	return b[i:]
+}
+
+// specialByte returns the first byte of a bare value that another reader of the
+// file is liable to treat as more than itself — a shell expanding $VAR or a
+// backquoted command, a parser stumbling over a stray quote or backslash — or 0
+// when the value holds none. A quoted value is not asked: quoting is the answer.
+func specialByte(v []byte) byte {
+	for _, c := range v {
+		switch c {
+		case '$', '`', '"', '\'', '\\':
+			return c
+		}
+	}
+	return 0
 }
 
 // isSpace reports whether c is whitespace for trimming purposes.

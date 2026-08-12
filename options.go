@@ -69,16 +69,25 @@ const (
 // config is the resolved set of options for one operation. It is copied into
 // each [Decoder] and [Encoder] at construction and never mutated afterwards,
 // which is what makes concurrent use of separate instances safe.
+// Fields are ordered widest first so that the mask and the three flags share
+// one word. It keeps the struct under the size at which passing it by value
+// stops being free, which is how every function here takes it.
 type config struct {
-	indent             int
 	blockCommentBefore string
 	blockCommentAfter  string
+	indent             int
 	groupThreshold     int
-	shadows            bool
-	comments           bool
-	commentedRows      bool
 	quoting            QuoteStyle
 	order              Order
+
+	// disabledRules is a mask of the checks switched off with [WithoutRules].
+	// A mask rather than a set keeps config a plain value that can be copied
+	// into a Decoder without allocating or sharing anything.
+	disabledRules uint32
+
+	shadows       bool
+	comments      bool
+	commentedRows bool
 }
 
 // newConfig resolves opts over the defaults.
@@ -170,4 +179,17 @@ func WithQuoting(q QuoteStyle) Option {
 // parsing always records source order.
 func WithOrder(o Order) Option {
 	return optionFunc(func(c *config) { c.order = o })
+}
+
+// WithoutRules switches off the named checks. Checking only; a name this
+// package does not know switches nothing off, so a configuration written for a
+// later version stays usable.
+//
+//	env, rep, err := envi.CheckFile(".env", envi.WithoutRules(envi.RuleEmptyValue))
+func WithoutRules(rules ...Rule) Option {
+	var mask uint32
+	for _, r := range rules {
+		mask |= r.bit()
+	}
+	return optionFunc(func(c *config) { c.disabledRules |= mask })
 }

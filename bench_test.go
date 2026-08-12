@@ -100,3 +100,84 @@ func BenchmarkNewRow(b *testing.B) {
 		_ = envi.NewRow("app-section_name.sub", "value")
 	}
 }
+
+func BenchmarkCheck(b *testing.B) {
+	for _, n := range benchSizes {
+		src := genEnv(n)
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(src)))
+			for b.Loop() {
+				if _, _, err := envi.CheckString(src); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// genScattered builds a document whose prefixes are interleaved rather than
+// contiguous, so that regrouping has to move every row. The tidy case is
+// covered by BenchmarkRegroupOrdered.
+func genScattered(n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "GRP%d_KEY%d=value-%d\n", i%10, i, i)
+	}
+	return b.String()
+}
+
+func BenchmarkRegroup(b *testing.B) {
+	for _, n := range benchSizes {
+		src := genScattered(n)
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				e, err := envi.ParseString(src)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.StartTimer()
+				e.Regroup()
+			}
+		})
+	}
+}
+
+// BenchmarkRegroupOrdered measures the path a caller pays for calling Regroup
+// on a document that is already in order, which must stay cheap enough to be
+// worth doing unconditionally.
+func BenchmarkRegroupOrdered(b *testing.B) {
+	for _, n := range benchSizes {
+		e, err := envi.ParseString(genEnv(n))
+		if err != nil {
+			b.Fatal(err)
+		}
+		e.Regroup()
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				e.Regroup()
+			}
+		})
+	}
+}
+
+func BenchmarkTidy(b *testing.B) {
+	for _, n := range benchSizes {
+		src := genScattered(n)
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				e, err := envi.ParseString(src)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.StartTimer()
+				e.Tidy()
+			}
+		})
+	}
+}

@@ -4,6 +4,44 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`Env.Regroup` and `Env.Tidy`.** Regrouping gathers every key sharing a prefix into one block,
+  wherever those keys sit in the document, and dissolves a block that has fallen below the grouping
+  threshold; `Tidy` regroups and then sorts. This is the arrangement v1 performed on every read and
+  v2 had no way to perform at all: grouping happened only during parsing, and only for rows that
+  were already adjacent.
+- **`Check`, `CheckBytes`, `CheckString`, `CheckFile` and `Env.Check`.** Reading and validating in
+  one pass, reporting every problem rather than stopping at the first. Six rules — `syntax`,
+  `duplicate-key`, `key-invalid`, `key-not-canonical`, `empty-value`, `unquoted-value` — carried by
+  the new `Report`, `Problem`, `Rule` and `Severity` types. `Report.Text` renders findings the way
+  compilers do, `Report.JSON` as objects, `Report.Err` as one error.
+- `WithoutRules`, switching checks off by name. An unknown name switches nothing off, so a
+  configuration written for a later version stays usable.
+- Fuzz targets `FuzzCheck`, `FuzzRegroup` and `FuzzModelSurvivesEncoding`. The last asserts that
+  writing a document says everything the document holds — the property `FuzzRoundTrip` cannot see,
+  since it compares our output against our output and anything the encoder drops consistently looks
+  like a fixed point.
+
+### Fixed
+
+- **`WithOrder(OrderSorted)` now sorts the rows inside each block**, not only the top-level items,
+  which is what `Env.SortByKey` always did. Sorted output is also written from the model rather than
+  reproduced verbatim: a row's recorded lines describe the neighbours it had before sorting moved
+  everything. **Output bytes change for callers using this option.**
+- **A repeated commented-out key no longer swallows the lines above it.** Folding `# K=v` into an
+  earlier statement of the same key discarded that statement's recorded prefix, so a blank line or a
+  comment sitting there vanished from the file — text belonging to no other row, and therefore lost
+  outright.
+- **A key stated twice in comments no longer loses a line.** `# K=1` followed by `# K=2`, with no
+  live `K`, came back as `# K=1` alone: the second statement folded into the first as a shadow, and
+  a commented row wrote none of its shadows on the reasoning that an inert row has nothing to
+  shadow. A commented row's shadows are now written *below* it, which is where they were read — a
+  live row absorbs shadows from the lines above it, and nothing absorbs them upwards into an inert
+  row. Behaviour change for anyone who built such a row by hand with `Row.AddShadow`.
+
 ## [2.0.0] — 2026-08-12
 
 `v2` is a rewrite. It shares the domain model of `v1` — blocks, rows and shadows — and nothing else.

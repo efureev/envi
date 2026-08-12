@@ -3,10 +3,12 @@ package envi
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +19,11 @@ import (
 type Decoder struct {
 	s   *scanner
 	cfg config
+
+	// report collects findings instead of letting the first malformed line end
+	// the read. It is nil for a decoder built through [NewDecoder]; [Check]
+	// sets it, which is the only difference between the two paths.
+	report *Report
 }
 
 // NewDecoder returns a decoder reading from r.
@@ -30,12 +37,22 @@ func NewDecoder(r io.Reader, opts ...Option) *Decoder {
 // A malformed line stops the read and is reported as a [*SyntaxError] carrying
 // its position.
 func (d *Decoder) Decode() (*Env, error) {
-	b := newBuilder(d.cfg)
+	b := newBuilder(d.cfg, d.report)
 	var info lineInfo
 	for {
 		ok, err := d.s.scan(&info)
 		if err != nil {
-			return nil, err
+			var se *SyntaxError
+			if d.report == nil || !errors.As(err, &se) {
+				return nil, err
+			}
+			d.report.record(Problem{
+				Rule:     RuleSyntax,
+				Severity: SeverityError,
+				Line:     se.Line,
+				Col:      se.Col,
+				Msg:      se.Msg,
+			})
 		}
 		if !ok {
 			break
@@ -145,6 +162,11 @@ type builder struct {
 	// defining the same key twice folds instead of producing two rows.
 	seen map[string]*Row
 
+	// report and seenLine are set only while checking. seenLine remembers where
+	// a key was defined, so that a second definition can name the first.
+	report   *Report
+	seenLine map[string]int
+
 	// arena hands out rows from a shared backing array. Every row a document
 	// produces outlives the parse, so carving them from chunks costs one
 	// allocation per chunk instead of one per row.
@@ -154,8 +176,12 @@ type builder struct {
 // arenaChunk is how many rows are allocated at a time.
 const arenaChunk = 64
 
-func newBuilder(cfg config) *builder {
-	return &builder{cfg: cfg, headerIdx: -1, seen: make(map[string]*Row)}
+func newBuilder(cfg config, report *Report) *builder {
+	b := &builder{cfg: cfg, headerIdx: -1, seen: make(map[string]*Row), report: report}
+	if report != nil {
+		b.seenLine = make(map[string]int)
+	}
+	return b
 }
 
 // newRow returns storage for one row.
@@ -170,7 +196,10 @@ func (b *builder) newRow() *Row {
 
 func (b *builder) feed(info *lineInfo) {
 	switch info.kind {
-	case lineBlank, lineComment:
+	case lineBlank, lineComment, lineInvalid:
+		// A line that did not parse is held like a comment: it has already been
+		// reported, and keeping it means writing the document back does not
+		// quietly delete what could not be understood.
 		b.pending = append(b.pending, pendingLine{raw: info.raw, kind: info.kind})
 	case lineHeader:
 		b.headerIdx = len(b.pending)
@@ -204,16 +233,64 @@ func (b *builder) emit(info *lineInfo, commented bool) {
 		header = b.absorbShadows(r, header)
 	}
 
+	b.check(info, commented)
+
 	// The same key stated twice in one document folds into the row already
 	// emitted for it. Such a document cannot be reproduced line for line, so
 	// the verbatim rendering is dropped and the row is written from the model.
 	if prev, ok := b.seen[r.key]; ok {
+		// Only a second live definition loses anything: it takes the value and
+		// the earlier one becomes a shadow. A commented-out one merely records
+		// an alternative, which is what shadows are for.
+		if b.report != nil && !commented && !prev.commented {
+			b.report.record(Problem{
+				Rule:     RuleDuplicateKey,
+				Severity: SeverityError,
+				Line:     info.check.line,
+				Key:      r.key,
+				Msg:      "key is already defined on line " + strconv.Itoa(b.seenLine[r.key]) + ", and that value is discarded",
+			})
+		}
 		foldDuplicate(prev, r, commented)
+		if b.report != nil && !commented {
+			b.seenLine[r.key] = info.check.line
+		}
 		return
 	}
 
 	b.seen[r.key] = r
+	if b.report != nil {
+		b.seenLine[r.key] = info.check.line
+	}
 	b.rows = append(b.rows, pendingRow{row: r, header: header})
+}
+
+// check runs the rules that need the line as it was written. A commented-out
+// row is inert, so nothing it says is worth a complaint.
+func (b *builder) check(info *lineInfo, commented bool) {
+	if b.report == nil || commented {
+		return
+	}
+	lc := info.check
+	if lc.keyRaw != "" {
+		b.report.record(Problem{
+			Rule:     RuleKeyNotCanonical,
+			Severity: SeverityWarning,
+			Line:     lc.line,
+			Key:      info.key,
+			Msg:      "key is written as " + strconv.Quote(lc.keyRaw),
+		})
+	}
+	if lc.bareSpecial != 0 {
+		b.report.record(Problem{
+			Rule:     RuleUnquotedValue,
+			Severity: SeverityWarning,
+			Line:     lc.line,
+			Key:      info.key,
+			Msg:      "bare value holds " + strconv.QuoteRune(rune(lc.bareSpecial)),
+		})
+	}
+	checkRow(b.report, info.key, info.value, commented, lc.line)
 }
 
 // foldDuplicate merges a repeated definition of a key into the row already
@@ -236,6 +313,22 @@ func foldDuplicate(prev, next *Row, nextCommented bool) {
 	for _, s := range next.shadows {
 		prev.addParsedShadow(s)
 	}
+
+	// Two commented statements of one key fold into a row that is still
+	// commented, and such a row's shadows are written below it, so the lines
+	// recorded above it still describe exactly what precedes them. Keeping
+	// those lines is what stops a blank line or a comment above the first
+	// statement from disappearing, since no other row records it. The
+	// assignment itself has to be re-rendered, because reproducing the one
+	// recorded line would state only the first of the two.
+	//
+	// Any other fold hands the row a shadow written above it, where its
+	// recorded lines may already hold one absorbed from there, and writing both
+	// would say it twice. Then the whole rendering has to go.
+	if nextCommented && prev.commented {
+		prev.dropLine()
+		return
+	}
 	prev.dropRaw()
 }
 
@@ -252,6 +345,7 @@ func (b *builder) absorbShadows(r *Row, header *headerInfo) *headerInfo {
 		absorbed = append(absorbed, last)
 		b.rows = b.rows[:len(b.rows)-1]
 		delete(b.seen, last.row.key)
+		delete(b.seenLine, last.row.key)
 	}
 	if len(absorbed) == 0 {
 		return header
@@ -436,6 +530,13 @@ func (b *builder) addBlock(env *Env, prefix string, run []pendingRow) error {
 func foldHeader(pr pendingRow) {
 	if pr.header == nil {
 		return
+	}
+	// An ordinary comment is recorded on the row as well as kept verbatim; a
+	// header is not, because takePending splits it away from the lines the
+	// comment is built from. Recording it here is what keeps the text from
+	// vanishing if the row later moves and gives up its verbatim lines.
+	if pr.row.comment == "" {
+		pr.row.comment = pr.header.text
 	}
 	pre := make([]string, 0, len(pr.header.before)+1+len(pr.row.rawPrefix))
 	pre = append(pre, pr.header.before...)

@@ -3,6 +3,7 @@ package envi_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -132,15 +133,27 @@ func TestEncodeMultiLineComment(t *testing.T) {
 	}
 }
 
-func TestEncodeCommentedRowDropsShadows(t *testing.T) {
+// A commented row's shadows are written below it, not above.
+//
+// They can only have come from a later statement of the same key — nothing
+// absorbs shadows upwards into an inert row — so below is where they were read.
+// Skipping them, on the reasoning that an inert row has nothing to shadow,
+// deleted a line of the file outright.
+func TestEncodeCommentedRowWritesShadowsBelow(t *testing.T) {
 	t.Parallel()
 
 	e := envi.New(envi.NewRow("HYPE", "false").SetCommented(true).AddShadow("true"))
 
 	t.Run("included", func(t *testing.T) {
 		t.Parallel()
-		// A row that is itself inert has nothing for a shadow to shadow.
-		if got, want := encode(t, e), "# HYPE=false\n"; got != want {
+		if got, want := encode(t, e), "# HYPE=false\n# HYPE=true\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("without shadows", func(t *testing.T) {
+		t.Parallel()
+		if got, want := encode(t, e, envi.WithShadows(false)), "# HYPE=false\n"; got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
@@ -151,6 +164,63 @@ func TestEncodeCommentedRowDropsShadows(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
+}
+
+// The defect this closes: a key stated twice in comments kept only the first
+// statement, because the second folded into it as a shadow and a commented row
+// wrote none. The line was gone from the file with nothing to say it had been.
+func TestRepeatedCommentedKeyKeepsEveryStatement(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"two", "# K=1\n# K=2\n"},
+		{"three", "# K=1\n# K=2\n# K=3\n"},
+		{"after a blank line", "A=0\n\n# K=1\n# K=2\n"},
+		{"under a comment", "# note\n# K=1\n# K=2\n"},
+		{"inside a block", "APP_A=1\n# APP_K=1\n# APP_K=2\n"},
+		{"then a live value", "# K=1\n# K=2\nK=3\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			e, err := envi.ParseString(tt.src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := e.String(); got != tt.src {
+				t.Errorf("round trip = %q, want %q", got, tt.src)
+			}
+		})
+	}
+}
+
+// The statements are all reachable through the model too, not merely echoed
+// back as text.
+func TestRepeatedCommentedKeyIsModelled(t *testing.T) {
+	t.Parallel()
+
+	e, err := envi.ParseString("# K=1\n# K=2\n# K=3\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.Get("K")
+	if r == nil {
+		t.Fatal("K is gone")
+	}
+	if !r.IsCommented() {
+		t.Error("IsCommented = false, want true")
+	}
+	if r.Value() != "1" {
+		t.Errorf("Value = %q, want 1", r.Value())
+	}
+	if got := slices.Collect(r.Shadows()); !slices.Equal(got, []string{"2", "3"}) {
+		t.Errorf("Shadows = %v, want [2 3]", got)
+	}
 }
 
 func TestEncodeQuoting(t *testing.T) {

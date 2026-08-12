@@ -28,6 +28,23 @@
 // [Option] values, so a document can be re-encoded with different formatting
 // without being re-read.
 //
+// # Arranging a document
+//
+// Reading never rearranges anything, so a read-modify-write cycle produces a
+// diff confined to what changed. Rearranging is asked for: [Env.SortByKey]
+// sorts, [Env.Regroup] gathers every key sharing a prefix into one block
+// wherever those keys sit, and [Env.Tidy] does both. A row that moves gives up
+// its verbatim rendering, since the lines recorded above it described where it
+// used to be; a document already in order is left untouched.
+//
+// # Checking a document
+//
+// [Check] and its variants read and validate in one pass, collecting every
+// problem into a [Report] instead of stopping at the first malformed line the
+// way [Parse] does. [Env.Check] runs over a document already in memory the
+// rules that need no source text. Individual rules switch off with
+// [WithoutRules].
+//
 // # Options replace global state
 //
 // Every knob is an [Option] passed to the operation that uses it. The package
