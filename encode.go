@@ -87,23 +87,20 @@ func (enc *Encoder) ordered(e *Env) []Item {
 	return items
 }
 
-// blanksAfter reports how many blank lines follow it, preferring what the
-// source had and falling back to the configured indent for blocks.
+// blanksAfter reports how many blank lines follow an item.
+//
+// Only blocks carry one. Blank lines that followed a row in the source are kept
+// in the verbatim prefix of whatever came next, so a row never has to account
+// for them.
 func (enc *Encoder) blanksAfter(it Item) int {
-	n := -1
-	switch v := it.(type) {
-	case *Row:
-		n = v.blanksAfter
-	case *Block:
-		n = v.blanksAfter
+	b, isBlock := it.(*Block)
+	if !isBlock {
+		return 0
 	}
-	if n >= 0 {
-		return n
+	if b.blanksAfter >= 0 {
+		return b.blanksAfter
 	}
-	if _, isBlock := it.(*Block); isBlock {
-		return enc.cfg.indent
-	}
-	return 0
+	return enc.cfg.indent
 }
 
 func (enc *Encoder) writeBlanks(bw *bufio.Writer, n int) {
@@ -134,13 +131,8 @@ func (enc *Encoder) writeBlock(bw *bufio.Writer, b *Block) bool {
 		bw.WriteString(enc.eol)
 	}
 
-	for i, r := range b.rows {
-		if !enc.writeRow(bw, r) {
-			continue
-		}
-		if i < len(b.rows)-1 && r.blanksAfter > 0 {
-			enc.writeBlanks(bw, r.blanksAfter)
-		}
+	for _, r := range b.rows {
+		enc.writeRow(bw, r)
 	}
 	return true
 }

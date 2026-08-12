@@ -188,12 +188,11 @@ func (b *builder) feed(info *lineInfo) {
 func (b *builder) emit(info *lineInfo, commented bool) {
 	r := b.newRow()
 	*r = Row{
-		key:         info.key,
-		value:       info.value,
-		rawLine:     info.raw,
-		parsed:      true,
-		commented:   commented,
-		blanksAfter: 0,
+		key:       info.key,
+		value:     info.value,
+		rawLine:   info.raw,
+		parsed:    true,
+		commented: commented,
 	}
 
 	header, prefix, comment := b.takePending()

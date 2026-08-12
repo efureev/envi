@@ -44,17 +44,12 @@ type Row struct {
 
 	shadows   []string
 	commented bool
-
-	// blanksAfter is how many blank lines followed the row in the source, or
-	// -1 for a row built in memory. Recording it is what lets a parsed
-	// document round-trip byte for byte.
-	blanksAfter int
 }
 
 // NewRow returns a row with the given key and value. The key is normalised (see
 // [NormalizeKey]).
 func NewRow(key, value string) *Row {
-	return &Row{key: NormalizeKey(key), value: value, blanksAfter: -1}
+	return &Row{key: NormalizeKey(key), value: value}
 }
 
 // Key returns the row's full, normalised key.

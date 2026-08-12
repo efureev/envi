@@ -184,7 +184,7 @@ func (e *Env) Set(key, value string) *Row {
 	if r := e.Get(k); r != nil {
 		return r.SetValue(value)
 	}
-	r := &Row{key: k, value: value, blanksAfter: -1}
+	r := &Row{key: k, value: value}
 	e.place(r)
 	return r
 }
