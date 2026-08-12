@@ -10,8 +10,9 @@ import (
 	envi "github.com/efureev/envi/v2"
 )
 
-// genEnv builds the same document shape the v1 baseline measures, so the two
-// sets of numbers compare directly. See docs/AUDIT.md §3.
+// genEnv builds the document shape the recorded baseline was measured on, so
+// numbers compare directly across runs. The baseline is the table in the 2.0.0
+// entry of CHANGELOG.md.
 func genEnv(n int) string {
 	var b strings.Builder
 	for i := range n {

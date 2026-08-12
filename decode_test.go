@@ -339,7 +339,7 @@ func TestGroupThreshold(t *testing.T) {
 	})
 }
 
-// C3: merging files whose keys differ in case lost the earlier comment in v1.
+// C3: merging files whose keys differ in case used to lose the earlier comment.
 func TestLoadMergesFilesKeepingComments(t *testing.T) {
 	t.Parallel()
 

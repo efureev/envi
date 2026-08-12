@@ -388,7 +388,7 @@ func TestRegroupAfterDeleteSweepsTombstones(t *testing.T) {
 }
 
 // Rows added after parsing land wherever Set could put them; regrouping is what
-// files them, which is the case the v1 library covered and v2 did not.
+// files them.
 func TestRegroupFilesRowsAddedLater(t *testing.T) {
 	t.Parallel()
 

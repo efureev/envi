@@ -5,7 +5,7 @@
 | Version | Supported |
 |---|---|
 | `v2.x` (`github.com/efureev/envi/v2`) | yes |
-| `v1.x` | no — frozen, with known crashes and data-loss defects; upgrade to `v2` |
+| anything older | no — upgrade to `v2` |
 
 ## Reporting a vulnerability
 

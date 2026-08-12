@@ -24,9 +24,10 @@ lint: ## golangci-lint
 cover: test ## open the coverage report
 	go tool cover -html=coverage.out
 
-fuzz: ## short fuzz smoke over the parser, as CI runs it
+fuzz: ## short fuzz smoke over every target, as CI runs it
 	go test -run Fuzz -fuzz FuzzParse -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzRoundTrip$$' -fuzztime 30s
+	go test -run Fuzz -fuzz 'FuzzRoundTripRewritten$$' -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzModelSurvivesEncoding$$' -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzCheck$$' -fuzztime 30s
 	go test -run Fuzz -fuzz 'FuzzRegroup$$' -fuzztime 30s

@@ -10,9 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - **`Env.Regroup` and `Env.Tidy`.** Regrouping gathers every key sharing a prefix into one block,
   wherever those keys sit in the document, and dissolves a block that has fallen below the grouping
-  threshold; `Tidy` regroups and then sorts. This is the arrangement v1 performed on every read and
-  v2 had no way to perform at all: grouping happened only during parsing, and only for rows that
-  were already adjacent.
+  threshold; `Tidy` regroups and then sorts. Until now grouping happened only during parsing, and
+  only for rows that were already adjacent, so a document could not be rearranged after the fact.
 - **`Check`, `CheckBytes`, `CheckString`, `CheckFile` and `Env.Check`.** Reading and validating in
   one pass, reporting every problem rather than stopping at the first. Six rules — `syntax`,
   `duplicate-key`, `key-invalid`, `key-not-canonical`, `empty-value`, `unquoted-value` — carried by
@@ -44,11 +43,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [2.0.0] — 2026-08-12
 
-`v2` is a rewrite. It shares the domain model of `v1` — blocks, rows and shadows — and nothing else.
-The import path is `github.com/efureev/envi/v2`, and the code lives at the repository root; the
-`/v2` suffix is what identifies the major version, not a directory.
-
-`v1` is frozen and no longer on the default branch. It stays fetchable by its tags, up to `v1.3.1`.
+A rewrite. The domain model — blocks, rows and shadows — is the only thing carried over. The import
+path is `github.com/efureev/envi/v2`, and the code lives at the repository root; the `/v2` suffix is
+what identifies the major version, not a directory.
 
 There is no migration path by design: every entry point has a different name or signature. The
 reason is in the Fixed section below — the defects that mattered could not be repaired without
@@ -74,8 +71,8 @@ breaking the API they were built into.
   longer disturb each other, and encoding is safe from several goroutines.
 - **Source order is preserved.** Reading a document no longer sorts it; `Env.SortByKey` does that
   when asked. A read-modify-write cycle now produces a diff limited to what changed.
-- **`Row` is exported.** `v1` returned an unexported `*row` from exported functions, which callers
-  could not name.
+- **`Row` is exported.** Exported functions no longer hand back an unexported type that callers
+  cannot name.
 - **Parsing is a hand-written scanner.** No regular expressions, and no 64 KiB line limit.
 - **Lookups are O(1)**, and allocate nothing.
 - **`Save` is atomic**: it writes a temporary file and renames it, so an interrupted run cannot
@@ -100,19 +97,11 @@ a regression test named after its identifier.
 
 ### Performance
 
-Measured against `v1` on the same machine, 1000-line document, Go 1.26.5, Apple M5 Pro:
+The budget this release established, and which later releases are held to. 1000-line document,
+Go 1.26.5, Apple M5 Pro:
 
-| | v1 | v2 |
+| | Time | Allocations |
 |---|---:|---:|
-| Parse | 11.27 ms | 240.8 µs |
-| Parse allocations | 295 687 | 4 405 |
-| Write | 568.9 µs | 22.6 µs |
-| Write allocations | 10 914 | 5 |
-| Lookup | 1.362 µs | 30.7 ns |
-
----
-
-## v1
-
-`v1` is frozen. Its history is in the repository's git log; releases `v1.0.0` through `v1.3.1` were
-published without a changelog.
+| Parse | 240.8 µs | 4 405 |
+| Write | 22.6 µs | 5 |
+| Lookup | 30.7 ns | 0 |

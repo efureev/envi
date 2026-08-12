@@ -38,10 +38,10 @@ func TestNormalizeKey(t *testing.T) {
 	}
 }
 
-// TestNormalizeKeyMatchesReference pins v2's hand-written normaliser to the
-// semantics v1 expressed with a regexp and a per-character split. The reference
-// below is v1's algorithm transcribed; it is the slow implementation the
-// rewrite replaces, kept here only as an oracle.
+// TestNormalizeKeyMatchesReference pins the hand-written normaliser to the
+// semantics a regexp and a per-character split express. The reference below is
+// that slow, obviously-correct formulation, kept only as an oracle: it is what
+// the fast single-pass implementation has to agree with.
 func TestNormalizeKeyMatchesReference(t *testing.T) {
 	t.Parallel()
 

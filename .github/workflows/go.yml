@@ -50,8 +50,9 @@ jobs:
         with:
           version: v2.12.2
 
-  # Парсер фаззится на каждом пуше, коротко. Всё, что фаззер отверг, оседает в
-  # testdata/fuzz/ и с этого момента проигрывается обычным прогоном тестов.
+  # Все фаз-таргеты гоняются на каждом пуше, коротко. Всё, что фаззер отверг,
+  # оседает в testdata/fuzz/ и с этого момента проигрывается обычным прогоном
+  # тестов. Список обязан совпадать с целью `fuzz` в Makefile.
   fuzz:
     name: fuzz smoke
     runs-on: ubuntu-latest
@@ -62,6 +63,12 @@ jobs:
           go-version-file: go.mod
       - run: go test -run Fuzz -fuzz FuzzParse -fuzztime 30s
       - run: go test -run Fuzz -fuzz 'FuzzRoundTrip$' -fuzztime 30s
+      - run: go test -run Fuzz -fuzz 'FuzzRoundTripRewritten$' -fuzztime 30s
+      # Держит энкодер честным: round-trip сравнивает наш вывод с нашим же
+      # выводом и потому не видит того, что энкодер выбрасывает стабильно.
+      - run: go test -run Fuzz -fuzz 'FuzzModelSurvivesEncoding$' -fuzztime 30s
+      - run: go test -run Fuzz -fuzz 'FuzzCheck$' -fuzztime 30s
+      - run: go test -run Fuzz -fuzz 'FuzzRegroup$' -fuzztime 30s
 
   vuln:
     name: govulncheck

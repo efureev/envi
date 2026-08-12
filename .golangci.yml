@@ -28,8 +28,8 @@ linters:
         - (*bufio.Writer).WriteRune
     revive:
       rules:
-        # Every exported symbol carries a doc comment. This is what keeps
-        # docs/AUDIT.md A7 (godoc entirely empty in v1) from recurring.
+        # Every exported symbol carries a doc comment: the godoc page is the
+        # first thing anyone evaluating the library reads.
         - name: exported
           arguments: [checkPublicInterface]
         - name: package-comments

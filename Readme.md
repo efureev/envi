@@ -7,6 +7,8 @@
 ![Zero dependencies](https://img.shields.io/badge/dependencies-none-success)
 ![License](https://img.shields.io/github/license/efureev/envi)
 
+> Also available in [Russian](Readme.ru.md). This English version is the canonical one.
+
 ### The `.env` library that gives you your file back.
 
 Every `.env` library can read a file. Almost none can **write one back**. Load a config into a map,
@@ -58,8 +60,15 @@ envi.Save(env, ".env")
 + APP_NAME="My App"
 ```
 
-That difference is the entire point of this library. It is guaranteed by a property test: parse any
-document, write it back, and the bytes match. Continuously fuzzed.
+That difference is the entire point of this library, and it is held in place by property tests that
+run on every push: our own output always reparses to the identical bytes, and reading a document
+back always yields the same rows, values and shadows it held — so nothing can go quietly missing on
+the way out. Both are continuously fuzzed.
+
+A well-formed file comes back byte for byte. Two inputs are rearranged rather than reproduced, and
+the library says so rather than pretending otherwise: a key given a live value **twice**, where the
+second wins and the first becomes a shadow above it — `Check` reports this as an error — and a file
+mixing **CRLF and LF**, which is normalised to the first ending seen. Nothing is lost in either.
 
 ---
 
@@ -74,6 +83,9 @@ import envi "github.com/efureev/envi/v2"
 ```
 
 Requires Go 1.26. **Zero dependencies** — in the library and in its test suite.
+
+The `/v2` suffix stays in the import path even though the code sits at the repository root. That is
+simply how Go names a major version, not a directory you need to look for.
 
 ---
 
@@ -266,9 +278,9 @@ The parser is a hand-written single-pass scanner. No regular expressions anywher
 Lookups are O(1) and allocation-free. Binding resolves each type's layout once and caches it, so the
 thousandth config costs the same as the second.
 
-For scale: those numbers are 25–67× better than this library's own v1, whose parser recompiled a
-regular expression on every line — 5.5 µs and 146 allocations per line, against 4.5 ns and zero for
-a hand-written scan. That measurement is why there is no `regexp` anywhere in the module.
+The absence of `regexp` is a measured decision, not a stylistic one: compiling a pattern to classify
+a single line costs 5.5 µs and 146 allocations, against 4.5 ns and none for scanning the same line
+by hand. That is the whole gap, and it is why the scanner is written the way it is.
 
 ---
 
@@ -360,47 +372,6 @@ Full reference and runnable examples: [pkg.go.dev](https://pkg.go.dev/github.com
 
 An `*Env` is a mutable document — guard it like any other. `Decoder`, `Encoder` and `bind` share no
 state between instances, so parsing, writing and binding from many goroutines at once is safe.
-
----
-
-## Version 1
-
-`v1` is frozen. It stays fetchable by tag (`go get github.com/efureev/envi@v1.3.1`) but receives no
-fixes. It has known crashes in `Merge` and `RemoveRow`, loses comments when merging files, reorders
-every document it reads, and keeps its settings in package-level globals — so two callers in one
-process fight over them. All of it is fixed in v2, none of it will be fixed in v1.
-
-New code imports `github.com/efureev/envi/v2`. The `/v2` suffix stays in the import path even though
-the code sits at the repository root — that is simply how Go names a major version.
-
-Nothing v1 could do was dropped; most of it was renamed, and the rest got better. If you are looking
-for something by its old name:
-
-| v1 | v2 |
-|---|---|
-| `Env.GetBlock(prefix)` | `Env.Block(prefix)` |
-| `Env.Count()`, `BlocksCount()` | `Env.Len()`, `Env.NumBlocks()`, `Env.NumItems()` |
-| `Env.RemoveRow`, `RemoveBlock` | `Env.Delete`, `Env.DeleteBlock` |
-| `Env.Sorting()` | `Env.SortByKey()`, or `Env.Tidy()` to group as well |
-| `SortByBlocks` (on read) | `Env.Regroup()`, on demand rather than behind your back |
-| `Env.MergeItems(...)` | `Env.Add(...)` — adding an existing key merges it |
-| `Env.SetEnv(override)` | `Env.Export(override)` |
-| `Env.Marshal()`, `MarshalToSlice()` | `Env.String()`, `Env.MarshalText()`, `Env.WriteTo(w)` |
-| `Block.AddRows`, `AddPrefixedRows` | `Block.Add(rows...)` — takes either form of key |
-| `Block.GetRow`, `GetPrefixedRow` | `Block.Get(key)` — takes either form |
-| `Block.RemoveRow`, `RemovePrefixedRow` | `Block.Delete(key)` |
-| `Block.HasRow`, `Block.Count` | `Block.Has`, `Block.Len` |
-| `Block.MergeBlock`, `MergeRow` | `Env.Add`, `Env.Merge` |
-| `row.Commented()` | `Row.SetCommented(bool)` — reversible |
-| `row.GetFullKey()` | `Row.Key()` |
-| `row.HasShadows`, `AddShadows` | `Row.HasShadow`, `Row.AddShadow`, `Row.Shadows()` |
-| `SetIndent`, `SetCommentTemplate` | `WithIndent`, `WithBlockComment` |
-| `GroupRowsGreaterThen(n)` | `WithGroupThreshold(n)` |
-| `SetMarshalingWithout…` | `WithComments`, `WithShadows`, `WithCommentedRows` |
-
-The last four rows are the substantive change: v1 kept those settings in package-level globals, so
-two callers in one process overwrote each other's formatting. In v2 they are options passed to the
-one operation that uses them.
 
 ---
 

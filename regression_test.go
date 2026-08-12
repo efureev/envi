@@ -7,11 +7,11 @@ import (
 	envi "github.com/efureev/envi/v2"
 )
 
-// Regressions for the defects catalogued in docs/AUDIT.md. Each names the
-// finding it closes; the v1 counterparts live in defects_test.go at the
-// repository root and assert the opposite.
+// Regressions for the defects listed under Fixed in the 2.0.0 entry of
+// CHANGELOG.md. Each test names the finding it closes, so the defect and the
+// proof that it stays closed can be read together.
 
-// C1: merging a key absent from the receiver crashed v1 (envi.go:352).
+// C1: merging a key absent from the receiver used to panic.
 func TestRegressionC1_MergeMissingKey(t *testing.T) {
 	t.Parallel()
 
@@ -34,7 +34,7 @@ func TestRegressionC1_MergeMissingKey(t *testing.T) {
 	}
 }
 
-// C2: deleting a key whose block does not exist crashed v1 (envi.go:419).
+// C2: deleting a key whose block does not exist used to panic.
 func TestRegressionC2_DeleteWithoutBlock(t *testing.T) {
 	t.Parallel()
 
@@ -51,9 +51,9 @@ func TestRegressionC2_DeleteWithoutBlock(t *testing.T) {
 	}
 }
 
-// C3: merging documents whose keys differ only in case lost the earlier
-// comment in v1 (row.go:197), because the index was written under one form of
-// the key and read under another.
+// C3: merging documents whose keys differ only in case used to lose the earlier
+// comment, because the index was written under one form of the key and read
+// under another.
 func TestRegressionC3_MergePreservesCommentAcrossCase(t *testing.T) {
 	t.Parallel()
 
@@ -79,8 +79,7 @@ func TestRegressionC3_MergePreservesCommentAcrossCase(t *testing.T) {
 	}
 }
 
-// C4: a row whose key did not carry the block prefix vanished silently in v1
-// (block.go:91).
+// C4: a row whose key did not carry the block prefix used to vanish silently.
 func TestRegressionC4_PrefixMismatchIsAnError(t *testing.T) {
 	t.Parallel()
 
@@ -98,8 +97,8 @@ func TestRegressionC4_PrefixMismatchIsAnError(t *testing.T) {
 	}
 }
 
-// H1: a top-level row became unreachable once a block of the same prefix
-// existed (envi.go:267). Adding the block now adopts the row instead.
+// H1: a top-level row used to become unreachable once a block of the same
+// prefix existed. Adding the block now adopts the row instead.
 func TestRegressionH1_BlockAdoptsTopLevelRows(t *testing.T) {
 	t.Parallel()
 
@@ -135,7 +134,7 @@ func TestRegressionH1_BlockAdoptsTopLevelRows(t *testing.T) {
 	}
 }
 
-// H2: an empty incoming value erased a set one in v1 (row.go:99).
+// H2: an empty incoming value used to erase a set one.
 func TestRegressionH2_EmptyValueDoesNotErase(t *testing.T) {
 	t.Parallel()
 
@@ -151,7 +150,7 @@ func TestRegressionH2_EmptyValueDoesNotErase(t *testing.T) {
 	}
 }
 
-// H3: reading a document reordered it in v1 (envi.go:35, 179, 514).
+// H3: reading a document used to reorder it.
 func TestRegressionH3_OrderIsPreserved(t *testing.T) {
 	t.Parallel()
 
@@ -181,7 +180,7 @@ func TestRegressionH3_OrderIsPreserved(t *testing.T) {
 	}
 }
 
-// H5: configuration lived in package globals in v1, so concurrent use raced.
+// H5: configuration used to live in package globals, so concurrent use raced.
 // Encoders now carry their own configuration; run under -race.
 func TestRegressionH5_ConcurrentEncodersDoNotRace(t *testing.T) {
 	t.Parallel()
