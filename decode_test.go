@@ -671,3 +671,76 @@ func TestParsedBlockRenderedFromModel(t *testing.T) {
 		}
 	})
 }
+
+// A section header standing above a shadow belongs to the block the live row
+// will form, not to the shadow it happens to precede.
+func TestHeaderAboveShadowTransfersToBlock(t *testing.T) {
+	t.Parallel()
+
+	const src = "###   ---[ Section ]---   ###\n# APP_URL=dev\nAPP_URL=prod\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	b := e.Block("APP")
+	if b == nil {
+		t.Fatal("block APP missing")
+	}
+	if b.Comment() != "Section" {
+		t.Errorf("block comment = %q, want it taken from the header", b.Comment())
+	}
+	if r := e.Get("APP_URL"); r == nil || !r.HasShadow("dev") {
+		t.Error("the shadow was lost")
+	}
+	if got := e.String(); got != src {
+		t.Errorf("round trip changed the document:\ngot  %q\nwant %q", got, src)
+	}
+}
+
+// A row that carries its own comment and also absorbs shadows keeps both, with
+// the shadows' comments first and its own last.
+func TestCommentsSurviveShadowAbsorption(t *testing.T) {
+	t.Parallel()
+
+	const src = "# why the alternative exists\n# K=alt\n# why the live value wins\nK=live\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	r := e.Get("K")
+	comment := r.Comment()
+	for _, want := range []string{"why the alternative exists", "why the live value wins"} {
+		if !strings.Contains(comment, want) {
+			t.Errorf("comment %q lost %q", comment, want)
+		}
+	}
+	if !r.HasShadow("alt") {
+		t.Error("shadow lost")
+	}
+	if got := e.String(); got != src {
+		t.Errorf("round trip changed the document:\ngot %q", got)
+	}
+}
+
+// Blank lines between comment lines do not break the comment into pieces, and
+// do not end up inside its text.
+func TestBlankLineBetweenCommentsIsNotCommentText(t *testing.T) {
+	t.Parallel()
+
+	const src = "# first\n\n# second\nK=v\n"
+
+	e, err := envi.ParseString(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := e.Get("K").Comment(), "first\nsecond"; got != want {
+		t.Errorf("comment = %q, want %q", got, want)
+	}
+	if got := e.String(); got != src {
+		t.Errorf("round trip changed the document:\ngot %q", got)
+	}
+}

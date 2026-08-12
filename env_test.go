@@ -1,6 +1,7 @@
 package envi_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -492,5 +493,88 @@ func TestBlankLinesBeforeHeaderPreserved(t *testing.T) {
 	}
 	if got := e.String(); got != src {
 		t.Errorf("round trip changed the document:\ngot  %q\nwant %q", got, src)
+	}
+}
+
+// A row removed straight from a block leaves the document's index pointing at
+// something that is no longer there. Both lookup and removal must cope.
+func TestStaleIndexAfterDirectBlockDelete(t *testing.T) {
+	t.Parallel()
+
+	b := envi.NewBlock("APP")
+	if err := b.Add(envi.NewRow("APP_A", "1"), envi.NewRow("APP_B", "2")); err != nil {
+		t.Fatal(err)
+	}
+	e := envi.New(b)
+
+	// Bypasses the document entirely.
+	if !b.Delete("APP_A") {
+		t.Fatal("Delete on the block failed")
+	}
+
+	if e.Has("APP_A") {
+		t.Error("Has found a row deleted behind the document's back")
+	}
+	if e.Delete("APP_A") {
+		t.Error("Delete reported removing a row that was already gone")
+	}
+	// The document is still usable for everything else.
+	if got, ok := e.Lookup("APP_B"); !ok || got != "2" {
+		t.Errorf("APP_B = %q, %v", got, ok)
+	}
+}
+
+// Adopting top-level rows into a new block must leave rows of other prefixes
+// exactly where they were.
+func TestAddBlockAdoptsOnlyItsOwnPrefix(t *testing.T) {
+	t.Parallel()
+
+	e := envi.New(
+		envi.NewRow("DB_HOST", "db"),
+		envi.NewRow("APP_NAME", "app"),
+		envi.NewRow("HYPE", "false"),
+	)
+
+	if err := e.Add(envi.NewBlock("APP")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if b := e.Block("APP"); b == nil || b.Len() != 1 {
+		t.Fatalf("block APP holds %v rows, want 1", b.Len())
+	}
+	if e.Block("DB") != nil {
+		t.Error("a block was created for DB, which was never asked for")
+	}
+	for _, key := range []string{"DB_HOST", "APP_NAME", "HYPE"} {
+		if !e.Has(key) {
+			t.Errorf("%s became unreachable", key)
+		}
+	}
+	// DB_HOST and HYPE stay at top level; APP_NAME moved into the block.
+	if got, want := e.NumItems(), 3; got != want {
+		t.Errorf("NumItems = %d, want %d", got, want)
+	}
+}
+
+// Sorting compares in both directions, so an already-ordered block must come
+// out of SortByKey unchanged rather than scrambled.
+func TestSortByKeyOnAlreadyOrderedBlock(t *testing.T) {
+	t.Parallel()
+
+	b := envi.NewBlock("APP")
+	for i := range 12 { // ascending
+		if err := b.Add(envi.NewRow(fmt.Sprintf("APP_K%02d", i), fmt.Sprintf("v%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e := envi.New(b)
+
+	before := e.String()
+	e.SortByKey()
+	if after := e.String(); after != before {
+		t.Errorf("sorting an ordered block changed it:\nbefore %q\nafter  %q", before, after)
+	}
+	if got, _ := e.Lookup("APP_K11"); got != "v11" {
+		t.Errorf("APP_K11 = %q", got)
 	}
 }

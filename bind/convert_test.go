@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,4 +264,94 @@ func TestFieldErrorUnwraps(t *testing.T) {
 	if got := fieldErr.Error(); got == "" {
 		t.Error("FieldError.Error() is empty")
 	}
+}
+
+// An unsupported type nested inside a container or a struct is rejected while
+// the plan is built, naming the field it came from.
+func TestUnsupportedTypeInNestedPositions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("pointer target", func(t *testing.T) {
+		t.Parallel()
+		var cfg struct {
+			V *chan int `env:"V"`
+		}
+		if err := bind.Decode(mapSource{}, &cfg); !errors.Is(err, bind.ErrUnsupportedType) {
+			t.Errorf("error = %v, want ErrUnsupportedType", err)
+		}
+	})
+
+	t.Run("map key", func(t *testing.T) {
+		t.Parallel()
+		var cfg struct {
+			V map[chan int]string `env:"V"`
+		}
+		if err := bind.Decode(mapSource{}, &cfg); !errors.Is(err, bind.ErrUnsupportedType) {
+			t.Errorf("error = %v, want ErrUnsupportedType", err)
+		}
+	})
+
+	t.Run("inside a nested struct", func(t *testing.T) {
+		t.Parallel()
+		var cfg struct {
+			Inner struct {
+				V chan int `env:"V"`
+			} `env:"INNER"`
+		}
+		err := bind.Decode(mapSource{}, &cfg)
+		if !errors.Is(err, bind.ErrUnsupportedType) {
+			t.Fatalf("error = %v, want ErrUnsupportedType", err)
+		}
+		if !strings.Contains(err.Error(), "Inner.V") {
+			t.Errorf("error %q does not name the nested field", err)
+		}
+	})
+}
+
+// The aggregate reads differently for one failure and for several; both forms
+// must name the field and the key.
+func TestErrorMessageForms(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single failure", func(t *testing.T) {
+		t.Parallel()
+		var cfg struct {
+			Port int `env:"PORT"`
+		}
+		err := bind.Decode(mapSource{"PORT": "eighty"}, &cfg)
+		if err == nil {
+			t.Fatal("Decode accepted a bad value")
+		}
+
+		msg := err.Error()
+		if strings.Contains(msg, "fields failed") {
+			t.Errorf("single failure used the plural form: %q", msg)
+		}
+		for _, want := range []string{"Port", "PORT"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("message %q does not mention %q", msg, want)
+			}
+		}
+	})
+
+	t.Run("several failures", func(t *testing.T) {
+		t.Parallel()
+		var cfg struct {
+			A int `env:"A"`
+			B int `env:"B"`
+			C int `env:"C"`
+		}
+		err := bind.Decode(mapSource{"A": "x", "B": "y", "C": "z"}, &cfg)
+		if err == nil {
+			t.Fatal("Decode accepted bad values")
+		}
+
+		msg := err.Error()
+		if !strings.Contains(msg, "3 fields failed") {
+			t.Errorf("message does not count the failures: %q", msg)
+		}
+		if strings.Count(msg, "\n  - ") != 3 {
+			t.Errorf("message does not list every failure: %q", msg)
+		}
+	})
 }
