@@ -130,6 +130,50 @@ bind: 2 fields failed:
 структуры, `[]byte` и всё, что реализует `encoding.TextUnmarshaler`, — а это попутно покрывает `time.Time`, `net.IP` и
 большинство ID-типов. Нет тега? Ключ выводится из имени поля: `AppName` → `APP_NAME`, `HTTPPort` → `HTTP_PORT`.
 
+Всё остальное закрывается одной строкой. `url.URL` — тип, на который натыкаются первым: `UnmarshalText` у него нет, и
+добавить его извне пакета нельзя.
+
+```go
+bind.Load(&cfg, bind.WithConverter(url.Parse))
+```
+
+Это покрывает поля `*url.URL`, а заодно `[]*url.URL` и `map[string]*url.URL` — регистрировать что-то ещё не нужно.
+Зарегистрированный тип побеждает и собственный `UnmarshalText`, поэтому тип, чья текстовая форма не годится для
+конфига, можно читать здесь иначе, не меняя сам тип.
+
+Нужно несколько? Передайте по одному на тип. Три стоят не дороже одного: то, что конвертер отключает — кэш плана
+типа, — отключается первым и повторно не отключается остальными.
+
+```go
+// net.ParseCIDR возвращает три значения и не подходит под func(string) (T, error).
+// Обёртка — и есть вся адаптация.
+parseCIDR := func(s string) (*net.IPNet, error) {
+    _, network, err := net.ParseCIDR(s)
+    return network, err
+}
+
+err := bind.Decode(src, &cfg,
+    bind.WithConverter(url.Parse),
+    bind.WithConverter(parseCIDR),
+    bind.WithConverter(parseSeverity),   // ваш собственный тип, метод не нужен
+)
+```
+
+Каждый сбойный конвертер по-прежнему сообщает о своём поле, поэтому один прогон показывает всю картину:
+
+```
+bind: 2 fields failed:
+  - Endpoint (ENDPOINT): parse "://nope": missing protocol scheme
+  - LogLevel (LOG_LEVEL): unknown severity "shout"
+```
+
+Впрочем, сперва проверьте: многие типы уже умеют читать себя сами. `regexp.Regexp` умеет, а `url.URL`, `net.IPNet` и
+`time.Location` — нет.
+
+Стоит знать, от чего это спасает: **без** конвертера такое поле не остаётся пустым — оно разбирается по частям, а его
+собственный ключ игнорируется. Поле `*url.URL` с ключом `ENDPOINT` соберётся из `ENDPOINT_SCHEME` и `ENDPOINT_HOST`,
+молча и без ошибки.
+
 ### 2. Работать с файлом как с документом
 
 ```go

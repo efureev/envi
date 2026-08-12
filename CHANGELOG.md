@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] — 2026-08-13
 
 ### Added
 
@@ -19,6 +19,18 @@ All notable changes to this project are documented here. The format follows
   compilers do, `Report.JSON` as objects, `Report.Err` as one error.
 - `WithoutRules`, switching checks off by name. An unknown name switches nothing off, so a
   configuration written for a later version stays usable.
+- **`bind.WithConverter`**, registering how to read one type that `bind` cannot fill on its own —
+  the case being a type from another package with no `encoding.TextUnmarshaler` that cannot be given
+  one, such as `net/url.URL`. Registering a value type covers pointers to it, and slices and maps of
+  it. A registered type wins over its own `UnmarshalText`, which is the only way to give a type one
+  meaning in a configuration file and another everywhere else. Until now such a field was not left
+  empty but taken apart, its own key ignored: a `*url.URL` field named `ENDPOINT` was assembled from
+  `ENDPOINT_SCHEME` and `ENDPOINT_HOST`, silently and without an error.
+
+  While any converter is registered the type's plan is rebuilt on each call rather than cached,
+  because a converter changes the plan structurally. Binding at startup will not notice; binding in
+  a loop should hold the result. Callers who register none are unaffected — the same 1.0 µs and two
+  allocations for fifty fields, measured back to back.
 - Fuzz targets `FuzzCheck`, `FuzzRegroup` and `FuzzModelSurvivesEncoding`. The last asserts that
   writing a document says everything the document holds — the property `FuzzRoundTrip` cannot see,
   since it compares our output against our output and anything the encoder drops consistently looks

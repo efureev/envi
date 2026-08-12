@@ -86,16 +86,60 @@ func TestPlanCacheReturnsTheSameInstance(t *testing.T) {
 	}
 	typ := reflect.TypeFor[cached]()
 
-	first, err := planFor(typ, defaultTagName)
+	first, err := planFor(typ, defaultTagName, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := planFor(typ, defaultTagName)
+	second, err := planFor(typ, defaultTagName, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if first != second {
 		t.Error("planFor rebuilt the plan instead of serving it from cache")
+	}
+}
+
+// A plan built with converters must not reach the cache in either direction.
+// Sharing it would hand the next caller, who registered different converters or
+// none, a plan built for somebody else's types — and the difference is
+// structural, not just which setter runs.
+func TestPlanWithConvertersIsNotCached(t *testing.T) {
+	t.Parallel()
+
+	type withConv struct {
+		Port int `env:"PORT"`
+	}
+	typ := reflect.TypeFor[withConv]()
+	conv := map[reflect.Type]setter{
+		reflect.TypeFor[int](): func(v reflect.Value, _ string) error { v.SetInt(42); return nil },
+	}
+
+	first, err := planFor(typ, defaultTagName, conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := planFor(typ, defaultTagName, conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Error("planFor served a converter-bearing plan from cache")
+	}
+
+	if _, ok := planCache.Load(planKey{t: typ, tag: defaultTagName}); ok {
+		t.Error("a converter-bearing plan was stored in the cache")
+	}
+
+	// And the cache still works for the same type without converters.
+	plain, err := planFor(typ, defaultTagName, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain == first {
+		t.Error("the plain plan is the converter-bearing one")
+	}
+	if _, ok := planCache.Load(planKey{t: typ, tag: defaultTagName}); !ok {
+		t.Error("the plain plan was not cached")
 	}
 }

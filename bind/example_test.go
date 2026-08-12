@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -123,4 +125,117 @@ func ExampleWithPrefix() {
 
 	fmt.Println(cfg.DB.Host, cfg.DB.Port)
 	// Output: primary 5432
+}
+
+// A type that cannot read itself from text needs a converter. url.URL is the
+// usual example: it has no UnmarshalText, and the method cannot be added to it
+// from outside its package.
+func ExampleWithConverter() {
+	type Config struct {
+		Endpoint *url.URL   `env:"ENDPOINT"`
+		Mirrors  []*url.URL `env:"MIRRORS,separator=;"`
+	}
+
+	src, err := envi.ParseString(
+		"ENDPOINT=https://api.example.com/v1\n" +
+			"MIRRORS=https://eu.example.com;https://us.example.com\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var cfg Config
+	if err := bind.Decode(src, &cfg, bind.WithConverter(url.Parse)); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(cfg.Endpoint.Host, len(cfg.Mirrors), cfg.Mirrors[1].Host)
+	// Output: api.example.com 2 us.example.com
+}
+
+// severity is a type of the caller's own. Registering a converter for it keeps
+// the parsing rules next to the configuration instead of forcing an
+// UnmarshalText method onto a domain type that has no other reason for one.
+type severity int
+
+const (
+	severityInfo severity = iota
+	severityWarn
+	severityError
+)
+
+func parseSeverity(s string) (severity, error) {
+	switch s {
+	case "info":
+		return severityInfo, nil
+	case "warn":
+		return severityWarn, nil
+	case "error":
+		return severityError, nil
+	}
+	return 0, fmt.Errorf("unknown severity %q", s)
+}
+
+// Converters accumulate: pass one per type. Registering three costs no more
+// than registering one, since what a converter suspends — caching the type's
+// plan — is suspended by the first and not again by the rest.
+func ExampleWithConverter_several() {
+	type Config struct {
+		Endpoint *url.URL   `env:"ENDPOINT"`
+		Subnet   *net.IPNet `env:"SUBNET"`
+		LogLevel severity   `env:"LOG_LEVEL,default=info"`
+	}
+
+	// net.ParseCIDR returns three values, so it does not fit
+	// func(string) (T, error) directly. Wrapping it is the whole adaptation.
+	parseCIDR := func(s string) (*net.IPNet, error) {
+		_, network, err := net.ParseCIDR(s)
+		return network, err
+	}
+
+	src, err := envi.ParseString(
+		"ENDPOINT=https://api.example.com/v1\n" +
+			"SUBNET=10.0.0.0/8\n" +
+			"LOG_LEVEL=warn\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var cfg Config
+	err = bind.Decode(src, &cfg,
+		bind.WithConverter(url.Parse),
+		bind.WithConverter(parseCIDR),
+		bind.WithConverter(parseSeverity),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(cfg.Endpoint.Host, cfg.Subnet, cfg.LogLevel == severityWarn)
+	// Output: api.example.com 10.0.0.0/8 true
+}
+
+// Every converter that fails reports its own field, so one run still shows the
+// whole picture rather than the first thing that went wrong.
+func ExampleWithConverter_errors() {
+	type Config struct {
+		Endpoint *url.URL `env:"ENDPOINT"`
+		LogLevel severity `env:"LOG_LEVEL"`
+	}
+
+	src, err := envi.ParseString("ENDPOINT=://nope\nLOG_LEVEL=shout\n")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var cfg Config
+	err = bind.Decode(src, &cfg,
+		bind.WithConverter(url.Parse),
+		bind.WithConverter(parseSeverity),
+	)
+
+	fmt.Println(err)
+	// Output:
+	// bind: 2 fields failed:
+	//   - Endpoint (ENDPOINT): parse "://nope": missing protocol scheme
+	//   - LogLevel (LOG_LEVEL): unknown severity "shout"
 }

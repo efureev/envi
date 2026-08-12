@@ -19,8 +19,18 @@ var (
 )
 
 // converterFor returns the setter for a field type, or an error wrapping
-// [ErrUnsupportedType].
-func converterFor(t reflect.Type, sep string) (setter, error) {
+// [ErrUnsupportedType]. conv holds the setters registered with
+// [WithConverter] and may be nil.
+func converterFor(t reflect.Type, sep string, conv map[reflect.Type]setter) (setter, error) {
+	// A registered type is the caller's to read, ahead of everything below —
+	// including the type's own TextUnmarshaler, which is the only way to give a
+	// type one meaning in a configuration file and another everywhere else.
+	// Indexing a nil map is legal and misses, so the common case costs one
+	// lookup and nothing else.
+	if set, ok := conv[t]; ok {
+		return set, nil
+	}
+
 	// A type that knows how to read itself wins over anything below, which is
 	// what makes time.Time, net.IP, uuid.UUID and friends work unmodified.
 	if reflect.PointerTo(t).Implements(textUnmarshalerType) {
@@ -79,7 +89,7 @@ func converterFor(t reflect.Type, sep string) (setter, error) {
 		}, nil
 
 	case reflect.Pointer:
-		inner, err := converterFor(t.Elem(), sep)
+		inner, err := converterFor(t.Elem(), sep, conv)
 		if err != nil {
 			return nil, err
 		}
@@ -93,10 +103,10 @@ func converterFor(t reflect.Type, sep string) (setter, error) {
 		}, nil
 
 	case reflect.Slice:
-		return sliceConverter(t, sep)
+		return sliceConverter(t, sep, conv)
 
 	case reflect.Map:
-		return mapConverter(t, sep)
+		return mapConverter(t, sep, conv)
 
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, t)
@@ -104,14 +114,14 @@ func converterFor(t reflect.Type, sep string) (setter, error) {
 }
 
 // sliceConverter builds the setter for a slice field.
-func sliceConverter(t reflect.Type, sep string) (setter, error) {
+func sliceConverter(t reflect.Type, sep string, conv map[reflect.Type]setter) (setter, error) {
 	// []byte carries the text itself rather than a list of numbers, which is
 	// what every caller means by it.
 	if t.Elem().Kind() == reflect.Uint8 {
 		return func(v reflect.Value, s string) error { v.SetBytes([]byte(s)); return nil }, nil
 	}
 
-	elem, err := converterFor(t.Elem(), sep)
+	elem, err := converterFor(t.Elem(), sep, conv)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +140,12 @@ func sliceConverter(t reflect.Type, sep string) (setter, error) {
 
 // mapConverter builds the setter for a map field. Entries are separated like
 // slice elements and each entry is "key:value".
-func mapConverter(t reflect.Type, sep string) (setter, error) {
-	keyConv, err := converterFor(t.Key(), sep)
+func mapConverter(t reflect.Type, sep string, conv map[reflect.Type]setter) (setter, error) {
+	keyConv, err := converterFor(t.Key(), sep, conv)
 	if err != nil {
 		return nil, err
 	}
-	valConv, err := converterFor(t.Elem(), sep)
+	valConv, err := converterFor(t.Elem(), sep, conv)
 	if err != nil {
 		return nil, err
 	}

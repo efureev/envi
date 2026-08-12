@@ -35,7 +35,25 @@ type planKey struct {
 // value of a type and never again.
 var planCache sync.Map // planKey -> *plan or error
 
-func planFor(t reflect.Type, tag string) (*plan, error) {
+// planFor returns the plan for a struct type. conv holds the setters
+// registered with [WithConverter] and may be nil.
+//
+// A non-empty conv bypasses the cache in both directions. A converter does not
+// merely pick a different setter: a registered type stops being a group of
+// fields and becomes a value, so the plan itself differs. Keyed by type alone,
+// a second call with a different set of converters would silently be handed the
+// first call's plan. There is no exact identity to key on either — the set is a
+// map, and identifying it by the code pointers of its functions would collide
+// on two closures sharing a body.
+func planFor(t reflect.Type, tag string, conv map[reflect.Type]setter) (*plan, error) {
+	if len(conv) > 0 {
+		p := &plan{}
+		if err := appendFields(p, t, tag, nil, "", "", map[reflect.Type]bool{t: true}, conv); err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+
 	k := planKey{t: t, tag: tag}
 	if v, ok := planCache.Load(k); ok {
 		switch cached := v.(type) {
@@ -47,7 +65,7 @@ func planFor(t reflect.Type, tag string) (*plan, error) {
 	}
 
 	p := &plan{}
-	err := appendFields(p, t, tag, nil, "", "", map[reflect.Type]bool{t: true})
+	err := appendFields(p, t, tag, nil, "", "", map[reflect.Type]bool{t: true}, nil)
 	if err != nil {
 		planCache.Store(k, err)
 		return nil, err
@@ -58,7 +76,7 @@ func planFor(t reflect.Type, tag string) (*plan, error) {
 
 // appendFields walks a struct type, descending into nested structs and
 // recording a leaf for every field it can fill.
-func appendFields(p *plan, t reflect.Type, tag string, index []int, namePrefix, keyPrefix string, seen map[reflect.Type]bool) error {
+func appendFields(p *plan, t reflect.Type, tag string, index []int, namePrefix, keyPrefix string, seen map[reflect.Type]bool, conv map[reflect.Type]setter) error {
 	for i := range t.NumField() {
 		sf := t.Field(i)
 		if !sf.IsExported() {
@@ -72,7 +90,7 @@ func appendFields(p *plan, t reflect.Type, tag string, index []int, namePrefix, 
 		idx := append(append(make([]int, 0, len(index)+1), index...), i)
 		goName := namePrefix + sf.Name
 
-		if nested, ok := structUnder(sf.Type); ok {
+		if nested, ok := structUnder(sf.Type, conv); ok {
 			// A cycle in the type graph would otherwise recurse forever.
 			if seen[nested] {
 				continue
@@ -83,7 +101,7 @@ func appendFields(p *plan, t reflect.Type, tag string, index []int, namePrefix, 
 			if opts.name != "" {
 				childKeys = joinKey(keyPrefix, opts.name)
 			}
-			if err := appendFields(p, nested, tag, idx, goName+".", childKeys, seen); err != nil {
+			if err := appendFields(p, nested, tag, idx, goName+".", childKeys, seen, conv); err != nil {
 				return err
 			}
 
@@ -96,7 +114,7 @@ func appendFields(p *plan, t reflect.Type, tag string, index []int, namePrefix, 
 			key = camelToSnake(sf.Name)
 		}
 
-		set, err := converterFor(sf.Type, opts.sep)
+		set, err := converterFor(sf.Type, opts.sep, conv)
 		if err != nil {
 			return fmt.Errorf("bind: field %s: %w", goName, err)
 		}
@@ -116,9 +134,20 @@ func appendFields(p *plan, t reflect.Type, tag string, index []int, namePrefix, 
 
 // structUnder reports the struct type a field descends into, if any. A struct
 // that can read itself from text is a value, not a group of fields.
-func structUnder(t reflect.Type) (reflect.Type, bool) {
+//
+// The checks mirror the order in converterFor: a registered type is a value
+// first of all, before the pointer is followed and before the type is asked
+// whether it reads text. Testing it later would let a registered *url.URL be
+// taken apart into Scheme and Host before its converter was ever consulted.
+func structUnder(t reflect.Type, conv map[reflect.Type]setter) (reflect.Type, bool) {
+	if _, ok := conv[t]; ok {
+		return nil, false
+	}
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
+		if _, ok := conv[t]; ok {
+			return nil, false
+		}
 	}
 	if t.Kind() != reflect.Struct {
 		return nil, false

@@ -69,3 +69,25 @@ func BenchmarkDecode(b *testing.B) {
 // keyed by type, so the first call cannot be repeated within one run. What it
 // costs is one pass of reflection over the struct, paid once per type per
 // process.
+
+// benchPoint is a type no field of wideConfig uses. Registering a converter
+// for it exercises the uncached path without changing what any field costs to
+// fill, so the two Decode benchmarks differ only in whether the plan is cached.
+type benchPoint struct{ X, Y int }
+
+// BenchmarkDecodeWithConverter records what registering a converter costs. The
+// plan cannot be cached while any is registered, so this is a full reflective
+// walk on every call. The figure exists so that the price is written down
+// rather than discovered later.
+func BenchmarkDecodeWithConverter(b *testing.B) {
+	src := wideSource()
+	conv := bind.WithConverter(func(string) (benchPoint, error) { return benchPoint{}, nil })
+
+	b.ReportAllocs()
+	for b.Loop() {
+		var cfg wideConfig
+		if err := bind.Decode(src, &cfg, conv); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

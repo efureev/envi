@@ -48,6 +48,22 @@
 // identifier types. A []byte field receives the raw text. Map entries are
 // written key:value.
 //
+// Anything else needs [WithConverter], which registers a function for one type:
+//
+//	bind.Load(&cfg, bind.WithConverter(url.Parse))
+//
+// This is what a type from another package needs when it cannot read itself
+// from text and cannot be given the method — [net/url.URL] is the common one.
+// Without a converter such a field is not left empty but taken apart, and its
+// own key ignored: a *url.URL field named ENDPOINT would be assembled from
+// ENDPOINT_SCHEME and ENDPOINT_HOST, quietly and without an error.
+//
+// A registered type wins over everything else, including its own
+// [encoding.TextUnmarshaler], so a type whose text form is not what a
+// configuration file should carry can be read differently here without being
+// changed. Registering a value type covers fields holding a pointer to it, and
+// slices and maps of it, without further registration.
+//
 // # Errors
 //
 // Every field that fails is collected, so one run reports everything wrong with

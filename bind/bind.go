@@ -97,7 +97,7 @@ func decode(src Source, dst any, cfg *config) error {
 		return ErrNotStruct
 	}
 
-	p, err := planFor(rv.Type(), cfg.tagName)
+	p, err := planFor(rv.Type(), cfg.tagName, cfg.converters)
 	if err != nil {
 		return err
 	}

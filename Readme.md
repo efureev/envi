@@ -132,6 +132,50 @@ pointers, nested structs, `[]byte`, and anything implementing `encoding.TextUnma
 quietly covers `time.Time`, `net.IP` and most ID types. No tag? The key comes from the field name:
 `AppName` → `APP_NAME`, `HTTPPort` → `HTTP_PORT`.
 
+Anything else takes one line. `url.URL` is the type everyone hits first: it has no `UnmarshalText`,
+and you cannot give it one from outside its package.
+
+```go
+bind.Load(&cfg, bind.WithConverter(url.Parse))
+```
+
+That covers `*url.URL` fields, and `[]*url.URL`, and `map[string]*url.URL`, with no further
+registration. A registered type wins over its own `UnmarshalText` too, so a type whose text form is
+not what a config file should carry can be read differently here without being changed.
+
+Need several? Pass one per type. Three cost no more than one — what a converter suspends, caching
+the type's plan, is suspended by the first and not again by the rest.
+
+```go
+// net.ParseCIDR returns three values, so it does not fit func(string) (T, error).
+// Wrapping it is the whole adaptation.
+parseCIDR := func(s string) (*net.IPNet, error) {
+    _, network, err := net.ParseCIDR(s)
+    return network, err
+}
+
+err := bind.Decode(src, &cfg,
+    bind.WithConverter(url.Parse),
+    bind.WithConverter(parseCIDR),
+    bind.WithConverter(parseSeverity),   // a type of your own, no method needed
+)
+```
+
+Each failing converter still reports its own field, so one run shows the whole picture:
+
+```
+bind: 2 fields failed:
+  - Endpoint (ENDPOINT): parse "://nope": missing protocol scheme
+  - LogLevel (LOG_LEVEL): unknown severity "shout"
+```
+
+Check before you write one, though — plenty of types already read themselves. `regexp.Regexp` does;
+`url.URL`, `net.IPNet` and `time.Location` do not.
+
+Worth knowing what it saves you from: **without** a converter such a field is not left empty — it is
+taken apart, and its own key ignored. A `*url.URL` field named `ENDPOINT` gets assembled from
+`ENDPOINT_SCHEME` and `ENDPOINT_HOST`, quietly, with no error.
+
 ### 2. Treat the file as a document
 
 ```go
