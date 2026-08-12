@@ -6,8 +6,8 @@ help: ## show this list
 
 check: fmt vet lint test ## everything CI runs, in the same order
 
-test: ## tests, exactly as CI runs them
-	go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+test: ## tests, with the same flags CI uses plus a profile for `make cover`
+	go test -race -shuffle=on -coverprofile=coverage.out ./...
 
 vet: ## go vet
 	go vet ./...

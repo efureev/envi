@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+# Один и тот же шелл на всей матрице. По умолчанию Windows-раннер исполняет
+# `run:` через PowerShell, а Linux и macOS — через bash, и аргументы вида
+# `-coverprofile=coverage.out` разбираются по-разному: Go получал `.out`
+# отдельным аргументом и пытался собрать его как пакет.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     name: test ${{ matrix.os }}
@@ -25,8 +33,10 @@ jobs:
       - run: go build -v ./...
       - run: go vet ./...
       # -shuffle=on обязателен: он же служит доказательством, что глобального
-      # состояния в пакете нет.
-      - run: go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+      # состояния в пакете нет. Профиль покрытия в файл не пишется — его никто
+      # никуда не выгружал, а процент печатает и обычный -cover. С -race режим
+      # покрытия и так становится atomic, задавать его отдельно незачем.
+      - run: go test -race -shuffle=on -cover ./...
 
   lint:
     name: lint
