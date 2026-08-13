@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -502,11 +503,20 @@ func TestStdin(t *testing.T) {
 	}
 }
 
+// A file this command creates holds configuration, often secrets, so nobody
+// but its owner should be able to read it. Save gives it 0600 and there is no
+// earlier mode to restore.
+//
+// Windows has no such bits — os.Chmod there uses only 0200 and Stat reports
+// 0666 for anything writable — so the property cannot be stated, let alone
+// checked.
 func TestFileModeOnCreate(t *testing.T) {
 	t.Parallel()
 
-	// A file this command creates holds configuration, often secrets. Save
-	// gives it 0600 and there is no earlier mode to restore.
+	if runtime.GOOS == "windows" {
+		t.Skip("windows does not carry unix permission bits")
+	}
+
 	path := filepath.Join(t.TempDir(), ".env")
 	if got := execCLI("", "set", "-f", path, "SECRET=x"); got.code != exitOK {
 		t.Fatalf("code = %d: %s", got.code, got.stderr)
@@ -516,7 +526,7 @@ func TestFileModeOnCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Errorf("mode = %o, want %o", got, 0o600)
+	if got := info.Mode().Perm(); got&0o077 != 0 {
+		t.Errorf("mode = %o, want nothing readable by group or other", got)
 	}
 }

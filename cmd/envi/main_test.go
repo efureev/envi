@@ -156,6 +156,10 @@ func TestFmt(t *testing.T) {
 	// Save writes through a temporary file, which carries 0600. Restoring the
 	// original mode keeps an edit from showing up in version control as a
 	// permission change.
+	//
+	// The assertion is that the mode did not change, not that it holds some
+	// particular value: Windows models none of these bits — os.Chmod there uses
+	// only 0200 — so a literal would be testing the platform, not the code.
 	t.Run("-w keeps the file's permissions", func(t *testing.T) {
 		t.Parallel()
 
@@ -164,16 +168,21 @@ func TestFmt(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		before, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		if got := execCLI("", "fmt", "-w", path); got.code != exitOK {
 			t.Fatalf("code = %d: %s", got.code, got.stderr)
 		}
 
-		info, err := os.Stat(path)
+		after, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := info.Mode().Perm(); got != 0o644 {
-			t.Errorf("mode = %o, want %o", got, 0o644)
+		if got, want := after.Mode().Perm(), before.Mode().Perm(); got != want {
+			t.Errorf("mode = %o, want %o", got, want)
 		}
 	})
 
